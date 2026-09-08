@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {BOXES} from './rules.js';
+import {applyPlushHands} from './character.js';
 const geo={box:new THREE.BoxGeometry(1,1,1),sphere:new THREE.SphereGeometry(1,24,18),cylinder:new THREE.CylinderGeometry(1,1,1,24),torus:new THREE.TorusGeometry(1,.08,8,32)};
 const materials=new Map();
 export function mat(color,metal=0,rough=.6,emissive=false){const key=[color,metal,rough,emissive].join();if(!materials.has(key))materials.set(key,new THREE.MeshStandardMaterial({color,metalness:metal,roughness:rough,emissive:emissive?color:0,emissiveIntensity:emissive?2:0}));return materials.get(key);}
@@ -7,31 +8,14 @@ export function mesh(parent,type,color,pos,scale,metal=0,rough=.6,emissive=false
 function label(parent,text,pos,width,color='#77e8ff',bg='#0b202d'){
   const c=document.createElement('canvas');c.width=512;c.height=128;const ctx=c.getContext('2d');ctx.fillStyle=bg;ctx.fillRect(0,0,512,128);ctx.strokeStyle=color;ctx.lineWidth=4;ctx.strokeRect(5,5,502,118);ctx.font='bold 58px sans-serif';ctx.fillStyle=color;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,256,68);const texture=new THREE.CanvasTexture(c);texture.colorSpace=THREE.SRGBColorSpace;const m=new THREE.Mesh(new THREE.PlaneGeometry(width,width/4),new THREE.MeshBasicMaterial({map:texture}));m.position.set(...pos);parent.add(m);return m;
 }
-export function duck({enemy=false,civilian=false}={}){
-  const g=new THREE.Group();const white=enemy?0xbdb9ab:0xf2ead6,dark=enemy?0x301b27:0x101e2c,glow=enemy?0xff515f:0x35d8ff;
-  mesh(g,'sphere',dark,[0,1.14,0],[.64,.79,.43],.35,.47);
-  mesh(g,'sphere',white,[0,2.17,0],[.72,.76,.65],0,.94);
-  // Small clustered down feathers make the silhouette soft without loading a model.
-  const down=new THREE.InstancedMesh(geo.sphere,mat(white,0,1),125),transform=new THREE.Object3D(); for(let i=0;i<125;i++){const phi=Math.acos(1-2*(i+.5)/125),theta=i*2.399963;transform.position.set(Math.sin(phi)*Math.cos(theta)*.69,2.17+Math.cos(phi)*.73,Math.sin(phi)*Math.sin(theta)*.62);transform.scale.set(.085,.083,.08);transform.updateMatrix();down.setMatrixAt(i,transform.matrix);} down.castShadow=true;down.receiveShadow=true;g.add(down);
-  mesh(g,'sphere',0xf2c547,[0,2.01,.64],[.43,.2,.36],.02,.5);mesh(g,'sphere',0xd99b25,[0,1.93,.67],[.38,.065,.29]);
-  for(const x of [-.29,.29]){mesh(g,'sphere',0x090d12,[x,2.3,.59],[.12,.17,.075],.3,.11);mesh(g,'sphere',0xffffff,[x-.025,2.35,.659],[.032,.04,.02]);}
-  mesh(g,'cylinder',dark,[0,2.8,0],[.78,.22,.7],.2,.62);mesh(g,'sphere',dark,[0,2.93,-.04],[.76,.26,.65],.15,.7);mesh(g,'sphere',0x070e17,[0,2.72,.48],[.66,.055,.45],.4,.24);
-  mesh(g,'box',0xcba94f,[0,2.84,.691],[.2,.22,.05],.8,.3);const badge=mesh(g,'box',0xf2d87d,[0,2.84,.727],[.11,.11,.018],.8,.3);badge.rotation.z=Math.PI/4;
-  for(const side of [-1,1]){mesh(g,'sphere',dark,[side*.59,1.34,.03],[.25,.51,.26],.25,.5);mesh(g,'sphere',white,[side*.62,.99,.22],[.24,.25,.23]);mesh(g,'box',dark,[side*.28,.45,0],[.4,.7,.39],.25,.5);mesh(g,'sphere',0xd7a62b,[side*.29,.12,.17],[.3,.14,.43],.1,.6);mesh(g,'box',glow,[side*.59,1.53,.25],[.19,.07,.04],.2,.3,true);mesh(g,'box',0x273847,[side*.29,1.13,.407],[.24,.31,.09],.3,.6);}
-  mesh(g,'box',0x070c12,[0,.73,0],[1.16,.15,.85],.3,.6);mesh(g,'box',0xd6b454,[0,.73,.46],[.22,.17,.06],.8,.25);
-  mesh(g,'box',glow,[-.25,1.59,.41],[.27,.065,.045],.3,.3,true);mesh(g,'box',0xccad58,[.25,1.6,.42],[.16,.22,.05],.7,.3);
-  for(let i=0;i<15;i++){const a=i/14*Math.PI;const chain=mesh(g,'torus',0xd7b44f,[Math.cos(a)*.42,1.73-Math.sin(a)*.23,.43],[.053,.063,.053],.85,.2);chain.rotation.y=i%2?.8:0;}
-  mesh(g,'box',0x172735,[.67,1.16,.63],[.18,.2,.75],.7,.33);mesh(g,'box',glow,[.67,1.19,1],[.07,.04,.03],.2,.3,true);
-  if(enemy){label(g,'GUARD',[0,1.36,.482],.65,'#ff7d86');}
-  return g;
-}
+export {createDuck as duck} from './character.js';
 export function weaponModel(){const g=new THREE.Group();
   mesh(g,'box',0x14232e,[.24,-.23,-.63],[.16,.18,.65],.65,.32);mesh(g,'box',0x283b4a,[.24,-.14,-.65],[.12,.05,.63],.65,.3);mesh(g,'box',0x080f17,[.24,-.21,-1.09],[.065,.065,.36],.7,.3);
   mesh(g,'box',0x0d1822,[.24,-.4,-.63],[.11,.3,.18],.4,.5);mesh(g,'box',0x213440,[.24,-.31,-.37],[.1,.26,.12],.4,.45);mesh(g,'box',0x53dfff,[.325,-.2,-.69],[.009,.035,.23],.3,.3,true);
   mesh(g,'box',0x121d28,[.24,-.07,-.57],[.075,.09,.075],.5,.4);mesh(g,'box',0x65f5ee,[.24,-.025,-.585],[.01,.014,.025],0,.2,true);
   mesh(g,'sphere',0xeee5d4,[.18,-.4,-.38],[.15,.17,.23],0,.95);mesh(g,'sphere',0xeee5d4,[.12,-.34,-.84],[.13,.12,.2],0,.95);
   mesh(g,'sphere',0x111f2e,[.12,-.52,-.16],[.17,.23,.3],.2,.6);mesh(g,'sphere',0x111f2e,[-.08,-.49,-.67],[.19,.14,.33],.2,.6);
-  const flash=mesh(g,'sphere',0x9df6ff,[.24,-.21,-1.3],[.08,.08,.18],0,.3,true);flash.visible=false;g.userData.flash=flash;return g;
+  const flash=mesh(g,'sphere',0x9df6ff,[.24,-.21,-1.3],[.08,.08,.18],0,.3,true);flash.visible=false;g.userData.flash=flash;applyPlushHands(g);return g;
 }
 export function createWorld(scene){
   scene.background=new THREE.Color(0x081420);scene.fog=new THREE.FogExp2(0x081420,.022);
@@ -55,4 +39,3 @@ export function createWorld(scene){
   const rainGeo=new THREE.BufferGeometry();const points=new Float32Array(1800);for(let i=0;i<points.length;i+=3){points[i]=(Math.random()-.5)*50;points[i+1]=Math.random()*22;points[i+2]=(Math.random()-.5)*50;}rainGeo.setAttribute('position',new THREE.BufferAttribute(points,3));const rain=new THREE.Points(rainGeo,new THREE.PointsMaterial({color:0x98c1d2,size:.045,transparent:true,opacity:.42}));scene.add(rain);
   return {ground,obstacles,site,rain,beacon};
 }
-

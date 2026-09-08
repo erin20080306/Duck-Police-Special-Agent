@@ -58,7 +58,8 @@ npm run preview
 ## 專案結構
 
 - `src/main.js`：遊戲循環、第一人稱操作、武器、AI、回合、HUD、手機輸入及音效。
-- `src/world.js`：鴨警模型、場景、武器及燈光；絨毛採 InstancedMesh 減少 draw calls。
+- `src/character.js`：第二版鴨警角色；細密短絨、寬鴨嘴、盾形警徽、長版皮衣與持槍姿勢。
+- `src/world.js`：場景、武器及燈光；角色絨毛採 InstancedMesh 減少 draw calls。
 - `src/rules.js`：碰撞、彈藥、難度、計時及拆除規則。
 - `src/style.css`：主選單、HUD 與響應式介面。
 - `tests/rules.test.js`：規則及地圖可通行性測試。
@@ -68,6 +69,6 @@ npm run preview
 
 這是原創鴨警主題的單人遊戲，參考使用者描述的瀏覽器 CS 類射擊玩法；不包含 Counter-Strike 商標、美術、地圖或音效。原 X 影片無法直接讀取，因此不宣稱逐項重現影片。
 
-需要支援 WebGL 2 的現代瀏覽器。電腦版使用 Pointer Lock；若游標未鎖定，點擊场景即可再次啟用。音效由 Web Audio 即時產生；字體使用 Google Fonts 並提供本機字體 fallback。沒有多人連線、帳號、伺服器排行榜或持久化遊戲存檔。
+需要支援 WebGL 2 的現代瀏覽器。電腦版使用 Pointer Lock；若游標未鎖定，點擊場景即可再次啟用。音效由 Web Audio 即時產生；字體使用 Google Fonts 並提供本機字體 fallback。沒有多人連線、帳號、伺服器排行榜或持久化遊戲存檔。
 
-自動驗證涵蓋規則測試與 production build；實際装置效能及各瀏覽器觸控手感仍需在目標裝置驗收。
+自動驗證涵蓋規則測試與 production build；實際裝置效能及各瀏覽器觸控手感仍需在目標裝置驗收。

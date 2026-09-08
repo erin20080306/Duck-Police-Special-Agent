@@ -12,10 +12,10 @@ const scene=new THREE.Scene();const world=createWorld(scene);
 const camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.06,140);camera.rotation.order='YXZ';scene.add(camera);
 const gun=weaponModel();camera.add(gun);
 const menuScene=new THREE.Scene();menuScene.background=new THREE.Color(0x07131d);menuScene.fog=new THREE.FogExp2(0x07131d,.055);
-menuScene.add(new THREE.HemisphereLight(0xbbdaed,0x0c1826,2.7));
-const keyLight=new THREE.DirectionalLight(0xffe1af,4);keyLight.position.set(-2,5,6);menuScene.add(keyLight);
-const rim=new THREE.PointLight(0x24cfff,75,15);rim.position.set(4,3,-2);menuScene.add(rim);const redRim=new THREE.PointLight(0xff3655,32,12);redRim.position.set(-3,2,-3);menuScene.add(redRim);
-const hero=duck();hero.position.set(1.55,.12,0);hero.scale.setScalar(1.32);hero.rotation.y=-.32;menuScene.add(hero);
+menuScene.add(new THREE.HemisphereLight(0xbbdaed,0x0c1826,1.6));
+const keyLight=new THREE.DirectionalLight(0xffeed7,3.2);keyLight.position.set(-2,5,6);menuScene.add(keyLight);
+const rim=new THREE.PointLight(0x24cfff,48,15);rim.position.set(4,3,-2);menuScene.add(rim);const redRim=new THREE.PointLight(0xff3655,32,12);redRim.position.set(-3,2,-3);menuScene.add(redRim);
+const hero=duck({hero:true});hero.position.set(1.55,.12,0);hero.scale.setScalar(1.3);hero.rotation.y=-.32;menuScene.add(hero);
 mesh(menuScene,'cylinder',0x122536,[1.55,-.08,0],[1.8,.25,1.8],.75,.36);
 const halo=mesh(menuScene,'torus',0x369dae,[1.55,.057,0],[1.74,1.74,1.74],.4,.3,true);halo.rotation.x=Math.PI/2;
 mesh(menuScene,'box',0x0b1722,[0,-.25,0],[100,.2,100],.55,.38);
@@ -115,4 +115,3 @@ holdButton('touch-fire',()=>firing=true,()=>firing=false);holdButton('touch-defu
 function resize(){renderer.setSize(innerWidth,innerHeight);camera.aspect=menuCamera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();menuCamera.updateProjectionMatrix();if(innerWidth<760){hero.position.x=.8;menuCamera.position.set(0,3,11.5);menuCamera.lookAt(0,2,0);}else{hero.position.x=1.55;menuCamera.position.set(0,2.7,9);menuCamera.lookAt(0,1.95,0);}}window.addEventListener('resize',resize);resize();
 renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();pause();$('fatal').hidden=false;$('fatal').innerHTML='<h2>3D 顯示已中斷</h2><p>請重新整理頁面以恢復遊戲。</p>';});
 let last=performance.now();renderer.setAnimationLoop(now=>{const dt=Math.min((now-last)/1000,.05);last=now;if(mode==='menu'){hero.rotation.y=-.32+Math.sin(now*.00025)*.14;hero.position.y=.12+Math.sin(now*.0014)*.018;renderer.render(menuScene,menuCamera);}else{if(mode==='playing')update(dt);const rain=world.rain.geometry.attributes.position;for(let i=1;i<rain.array.length;i+=3){rain.array[i]-=dt*10;if(rain.array[i]<0)rain.array[i]=22;}rain.needsUpdate=true;renderer.render(scene,camera);}});
-
