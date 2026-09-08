@@ -12,7 +12,7 @@ globalThis.document = {
     getContext: () => ({ fillRect() {}, strokeRect() {}, fillText() {} }),
   }),
 };
-for (const kind of ["foundry", "temple"])
+for (const kind of ["foundry", "temple", "harbor"])
   test(`${kind}: geometry, spawn points and guard routes are valid`, () => {
     const level = createLevel(kind, true);
     assert.ok(
@@ -65,7 +65,7 @@ test("duck geometry batches and first-person weapon animation anchors exist", ()
   }
 });
 
-for (const kind of ["foundry", "temple"]) {
+for (const kind of ["foundry", "temple", "harbor"]) {
   test(`${kind}: both courtyards and side alleys are reachable physical play space`, () => {
     const level = createLevel(kind, true);
     assert.deepEqual(BOUNDS, { x: 32, z: 60 });

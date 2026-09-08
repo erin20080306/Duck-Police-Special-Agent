@@ -61,9 +61,11 @@ function game({ floating = false, style = "strafe" } = {}) {
   const movement = [],
     looks = [],
     firing = [],
-    steering = [];
+    steering = [],
+    taps = [];
   let playing = true;
   let movementStyle = style;
+  let clock = 0;
   const input = bindTouchInput({
     stick,
     moveZone: floating ? moveZone : undefined,
@@ -75,6 +77,8 @@ function game({ floating = false, style = "strafe" } = {}) {
     onFire: (held) => firing.push(held),
     getMovementStyle: () => movementStyle,
     onSteer: (value) => steering.push(value),
+    onLookTap: () => taps.push(clock),
+    now: () => clock,
   });
   return {
     stick,
@@ -85,7 +89,11 @@ function game({ floating = false, style = "strafe" } = {}) {
     looks,
     firing,
     steering,
+    taps,
     input,
+    advance: (ms) => {
+      clock += ms;
+    },
     pause: () => {
       playing = false;
     },
@@ -388,4 +396,68 @@ test("losing floating movement capture stops steering but leaves an independentl
   assert.deepEqual(g.movement.at(-1), [0, 0]);
   assert.equal(g.firing.at(-1), true);
   assert.deepEqual(g.stick.style, { left: "", top: "", bottom: "" });
+});
+
+test("a still tap on the aim area fires, while any real drag turns instead", () => {
+  const g = game();
+  g.lookZone.emit("pointerdown", 1, { clientX: 250, clientY: 300 });
+  g.advance(90);
+  g.lookZone.emit("pointerup", 1);
+  assert.deepEqual(g.taps, [90], "a quick still touch is a shot");
+  assert.deepEqual(g.looks, [], "and it must not nudge the crosshair");
+
+  // A drag past the threshold is aiming, never a shot, however short it was.
+  g.lookZone.emit("pointerdown", 2, { clientX: 250, clientY: 300 });
+  g.lookZone.emit("pointermove", 2, { clientX: 262, clientY: 296 });
+  g.advance(40);
+  g.lookZone.emit("pointerup", 2);
+  assert.deepEqual(g.looks, [[12, -4]]);
+  assert.equal(g.taps.length, 1);
+
+  // Resting a thumb is neither: too long for a tap, too still to be a turn.
+  g.lookZone.emit("pointerdown", 3, { clientX: 250, clientY: 300 });
+  g.advance(900);
+  g.lookZone.emit("pointerup", 3);
+  assert.equal(g.taps.length, 1);
+  assert.deepEqual(g.looks, [[12, -4]]);
+});
+
+test("sub-threshold jitter is absorbed, then rotation resumes from the anchor", () => {
+  const g = game();
+  g.lookZone.emit("pointerdown", 1, { clientX: 200, clientY: 400 });
+  g.lookZone.emit("pointermove", 1, { clientX: 201, clientY: 401 });
+  g.lookZone.emit("pointermove", 1, { clientX: 202, clientY: 400 });
+  assert.deepEqual(g.looks, [], "tremor below the threshold is not a turn");
+  g.lookZone.emit("pointermove", 1, { clientX: 206, clientY: 404 });
+  assert.deepEqual(
+    g.looks,
+    [[6, 4]],
+    "the first real move is measured from the original contact point",
+  );
+  g.lookZone.emit("pointermove", 1, { clientX: 207, clientY: 404 });
+  assert.deepEqual(
+    g.looks,
+    [
+      [6, 4],
+      [1, 0],
+    ],
+    "once dragging, every sample keeps its full precision",
+  );
+  g.lookZone.emit("pointerup", 1);
+  assert.deepEqual(g.taps, []);
+});
+
+test("a canceled or paused aim touch neither fires nor leaves the tap armed", () => {
+  const g = game();
+  g.lookZone.emit("pointerdown", 1, { clientX: 250, clientY: 300 });
+  g.lookZone.emit("pointercancel", 1);
+  assert.deepEqual(g.taps, [], "a canceled touch is not a shot");
+  g.lookZone.emit("pointerdown", 2, { clientX: 250, clientY: 300 });
+  g.input.reset();
+  assert.deepEqual(g.taps, []);
+  g.lookZone.emit("pointerdown", 3, { clientX: 250, clientY: 300 });
+  g.pause();
+  g.lookZone.emit("pointermove", 3, { clientX: 250, clientY: 300 });
+  g.lookZone.emit("pointerup", 3);
+  assert.deepEqual(g.taps, []);
 });

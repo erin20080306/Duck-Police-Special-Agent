@@ -10,7 +10,7 @@ globalThis.document = {
   }),
 };
 
-for (const kind of ["foundry", "temple"]) {
+for (const kind of ["foundry", "temple", "harbor"]) {
   test(`${kind}: mobile weather stays bounded and survives a full particle lifecycle`, () => {
     const level = createLevel(kind, true);
     const collisions = JSON.stringify(level.boxes);
