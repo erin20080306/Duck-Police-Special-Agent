@@ -40,6 +40,7 @@ import {
   formatTime,
   waveSize,
   routeTo,
+  sectorFor,
 } from "./rules.js";
 const $ = (id) => document.getElementById(id),
   canvas = $("scene"),
@@ -79,13 +80,16 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xe7dec5, 2.7);
 sun.position.set(-17, 32, -30);
 sun.castShadow = true;
+// The shadow frustum follows the player rather than covering the whole map: at
+// the enlarged size a fixed box would either miss the outskirts or waste most of
+// its resolution on ground nobody is standing near.
 Object.assign(sun.shadow.camera, {
-  left: -42,
-  right: 42,
-  top: 42,
-  bottom: -42,
+  left: -34,
+  right: 34,
+  top: 34,
+  bottom: -34,
   near: 1,
-  far: 100,
+  far: 110,
 });
 sun.shadow.bias = -0.0003;
 sun.shadow.normalBias = 0.035;
@@ -1045,18 +1049,8 @@ function tickActors(dt) {
   }
 }
 function renderRadar() {
-  const sectorIndex =
-    player.z < -37
-      ? 1
-      : player.z > 37
-        ? 2
-        : player.x < -22
-          ? 3
-          : player.x > 22
-            ? 4
-            : 0;
-  if (level.sectors)
-    $("zoneLabel").textContent = level.sectors[sectorIndex].name;
+  const sector = level.sectors?.[sectorFor(player.x, player.z)];
+  if (sector) $("zoneLabel").textContent = sector.name;
   const c = $("radar"),
     ctx = c.getContext("2d"),
     size = c.width,
@@ -1199,6 +1193,14 @@ function tick(dt) {
     const bob = reduced
       ? 0
       : Math.sin(time * (run ? 15 : 10)) * Math.min(len, 1) * 0.018 * (1 - ads);
+    if (!low) {
+      // Snapped to whole units so the moving frustum does not shimmer.
+      const fx = Math.round(player.x),
+        fz = Math.round(player.z);
+      sun.position.set(fx - 17, 32, fz - 30);
+      sun.target.position.set(fx, 0, fz);
+      sun.target.updateMatrixWorld();
+    }
     camera.position.set(player.x, (crouch ? 1.13 : 1.77) + bob, player.z);
     camera.rotation.set(pitch + recoil * 0.42, yaw, 0);
     camera.fov = THREE.MathUtils.damp(
@@ -1712,6 +1714,13 @@ try {
 
 if (import.meta.env.DEV) {
   window.__duckDebug = {
+    // Development only: checking a map this size on foot is impractical.
+    teleport: (x, z, heading = yaw) => {
+      player.set(x, 0, z);
+      yaw = lookGoal.yaw = heading;
+      pitch = lookGoal.pitch = 0;
+      return { x: player.x, z: player.z };
+    },
     snapshot: () => ({
       state,
       player: player.toArray(),

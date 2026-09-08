@@ -68,18 +68,24 @@ test("duck geometry batches and first-person weapon animation anchors exist", ()
 for (const kind of ["foundry", "temple", "harbor"]) {
   test(`${kind}: both courtyards and side alleys are reachable physical play space`, () => {
     const level = createLevel(kind, true);
-    assert.deepEqual(BOUNDS, { x: 32, z: 60 });
+    assert.deepEqual(BOUNDS, { x: 46, z: 82 });
     assert.deepEqual(
       level.spawn,
       { x: 0, z: 28 },
       "the original deployment position is preserved",
     );
-    assert.equal(level.sectors.length, 5);
-    assert.ok(level.spawnPoints.length >= 14);
+    assert.equal(level.sectors.length, 9);
+    assert.ok(level.spawnPoints.length >= 20);
     const extensions = level.spawnPoints.filter(
       (point) => Math.abs(point.x) > 20 || Math.abs(point.z) > 36,
     );
-    assert.equal(extensions.length, 6);
+    assert.equal(extensions.length, 12);
+    // The ring road and the two new end districts are spawn territory too, or
+    // waves would still only ever arrive inside the original block.
+    const outskirts = level.spawnPoints.filter(
+      (point) => Math.abs(point.x) > 34 || Math.abs(point.z) > 63,
+    );
+    assert.equal(outskirts.length, 6);
     for (const target of [...level.sectors.slice(1), ...extensions]) {
       const route = routeTo(level.spawn, target, level.boxes);
       assert.ok(
@@ -121,8 +127,18 @@ for (const kind of ["foundry", "temple", "harbor"]) {
         JSON.stringify({ target, position }),
       );
     }
+    // A guard must be able to walk the full diagonal of the enlarged map: the
+    // search cap has to cover the whole grid, not just the original block.
+    assert.ok(
+      routeTo(
+        { x: -BOUNDS.x + 2, z: -BOUNDS.z + 2 },
+        { x: BOUNDS.x - 2, z: BOUNDS.z - 2 },
+        level.boxes,
+      ).length > 0,
+      "corner to corner must stay routable",
+    );
     level.root.updateMatrixWorld(true);
-    for (const x of [-27, 27]) {
+    for (const x of [-27, 27, -39.5, 39.5]) {
       // Former background decks used to occupy the future side lanes without
       // colliders. A real ray verifies the lane's visible floor is at ground level.
       const ray = new THREE.Raycaster(
@@ -143,6 +159,42 @@ for (const kind of ["foundry", "temple", "harbor"]) {
     assert.ok(
       level.boxes.filter((box) => box.z > 38 && Math.abs(box.x) < 32).length >=
         4,
+    );
+    // The new ground is furnished, not an empty apron behind an invisible wall.
+    for (const [label, inside] of [
+      ["north end", (box) => box.z < -63],
+      ["south end", (box) => box.z > 63],
+      ["west ring", (box) => box.x < -34 && Math.abs(box.z) < 63],
+      ["east ring", (box) => box.x > 34 && Math.abs(box.z) < 63],
+    ])
+      assert.ok(
+        level.boxes.filter(inside).length >= 3,
+        `${label} needs real cover`,
+      );
+    // Enlarging the boundary turns former background into playable ground. A
+    // solid volume with faces both above head height and across it, on a square
+    // with no collider, is a wall the player walks straight through.
+    const solid = level.rayTargets.filter((object) => !object.userData.flat);
+    const phantom = [];
+    for (let x = -BOUNDS.x + 2; x <= BOUNDS.x - 2; x += 3)
+      for (let z = -BOUNDS.z + 2; z <= BOUNDS.z - 2; z += 3) {
+        if (blocked(x, z, level.boxes, 0.5)) continue;
+        const heights = new THREE.Raycaster(
+          new THREE.Vector3(x, 60, z),
+          new THREE.Vector3(0, -1, 0),
+        )
+          .intersectObjects(solid, false)
+          .map((hit) => hit.point.y);
+        if (
+          heights.some((y) => y > 2.2) &&
+          heights.some((y) => y > 0.35 && y < 1.9)
+        )
+          phantom.push([x, z]);
+      }
+    assert.deepEqual(
+      phantom,
+      [],
+      "walkable ground must not sit inside solid scenery",
     );
     level.dispose();
   });
