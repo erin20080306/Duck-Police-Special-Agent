@@ -1,19 +1,37 @@
 <!doctype html>
-<html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#07121b"><title>鴨警特工 | DUCK FORCE</title><link rel="stylesheet" href="/src/style.css"></head>
+<html lang="zh-Hant">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#171a1b"><meta name="description" content="鴨警特工：工業廢墟與雨夜神社的第一人稱戰術行動。支援電腦鍵鼠與手機觸控。"><title>鴨警特工 · DUCK FORCE</title></head>
 <body>
-<canvas id="game" aria-label="鴨警特工 3D 遊戲場景"></canvas>
-<div id="vignette"></div><div id="damage"></div>
-<header><div class="brand"><b>DF<span>07</span></b><div>鴨警特工<small>DUCK FORCE · SPECIAL AGENT</small></div></div><button id="sound" aria-label="切換音效">音效：開</button></header>
-<main id="menu" class="panel">
- <div class="eyebrow">DUCK FORCE / 行動指揮部</div><h1>小鴨出動。<br><em>全城戒備。</em></h1><p class="intro">穿過霓虹街區，攔截失控機器人。<br>今晚，由你守護這座城市。</p>
- <div class="options"><label>行動區域<select id="map"><option value="harbor">01 / 霓虹港區</option><option value="square">02 / 中央廣場</option></select></label><label>任務難度<select id="difficulty"><option value="easy">見習特工</option><option value="normal" selected>正式特工</option><option value="hard">菁英特工</option></select></label></div>
- <button id="start" class="primary">開始行動 <span>→</span></button><div class="caption">單人任務 · 3 波敵襲 · 2 種裝備</div>
- <details><summary>操作指南</summary><p>WASD 移動 · 滑鼠轉向 · 按住左鍵射擊 · 右鍵瞄準<br>R 換彈 · Shift 衝刺 · 1 / 2 切換武器 · V 切換視角 · Esc 暫停<br>手機：左側搖桿移動，右側空白區滑動轉向，按射擊鍵開火。</p></details>
- <p id="load">正在建立行動現場…</p>
+<canvas id="scene" aria-label="3D 戰術射擊遊戲"></canvas><div class="film"></div><div id="damage"></div>
+<main id="lobby">
+ <header><a href="./" class="wordmark">DF<span>TACTICAL OPERATIONS</span></a><div class="build"><i></i> 單人戰術行動</div></header>
+ <section class="deployment">
+  <div class="eyebrow">SPECIAL AGENT / 007</div><h1>鴨警特工</h1><div class="english">DUCK FORCE</div><div class="rule"></div>
+  <nav aria-label="選單"><button id="deployTab" class="tab active">行動部署</button><button id="settingsTab" class="tab">操作設定</button></nav>
+  <div id="deployPanel">
+   <div class="section-label">選擇戰區 <span>02 LOCATIONS</span></div>
+   <div class="map-list"><button class="map-card selected" data-map="foundry" aria-pressed="true"><span class="map-number">01</span><span><strong>鋼鐵廢墟</strong><small>IRON DISTRICT / 工業街區</small></span><i>↗</i></button><button class="map-card" data-map="temple" aria-pressed="false"><span class="map-number">02</span><span><strong>雨夜神社</strong><small>SHADOW SHRINE / 夜間行動</small></span><i>↗</i></button></div>
+   <div class="mission-brief"><span id="mapWeather">陰天 / 低能見度</span><p id="brief">穿越廢棄工業街区，在掩體間壓制敵方守衛。完成三波清剿，確保街區安全。</p></div>
+   <div class="loadout"><label>行動難度<select id="difficulty"><option value="easy">新進特工</option><option value="normal" selected>標準行動</option><option value="hard">菁英特勤</option></select></label><label>主武器<select id="primaryWeapon"><option value="0">AR-07 突擊步槍</option><option value="1">P-09 戰術手槍</option></select></label></div>
+  </div>
+  <div id="settingsPanel" hidden><label class="setting">畫面品質<select id="quality"><option value="auto">自動 / 依裝置</option><option value="high">高 / 電腦</option><option value="low">效能 / 手機</option></select></label><label class="setting">瞄準靈敏度<input id="sensitivity" type="range" min="0.4" max="1.8" step="0.1" value="1"></label><button id="sound" class="setting-button" aria-pressed="true">音效：開啟</button><p class="controls-copy">電腦：WASD 移動、左鍵開火、右鍵瞄準、R 換彈、Shift 疾跑、C 蹲下、1 / 2 切槍、Esc 暫停。<br><br>手機：橫向遊玩。左搖桿移動，右側滑動瞄準，使用獨立的開火、瞄準、換彈、蹲下及疾跑按鍵。</p></div>
+  <button id="start" class="start" disabled><span>正在準備戰區</span><b>→</b></button><div id="loading" role="status">載入場景與材質…</div>
+ </section>
+ <aside class="agent-card"><span>ACTIVE OPERATIVE</span><strong>DUCK <b>007</b></strong><p>紅衣小鴨 / 城市特勤組</p><div><i></i> 待命中</div></aside>
+ <footer><span>第一人稱 · 單人 × AI</span><span>DEFEND. SURVIVE. RETURN.</span><button id="fullscreen">全螢幕 ↗</button></footer>
 </main>
-<aside id="agent"><span>AGENT / 007</span><strong>鴨警特工</strong><p>黑帽 · 紅色針織上衣 · 桃粉短褲</p><div>城市巡防隊　／　待命中</div></aside>
-<section id="hud" hidden><div class="mission"><span id="wave">第 1 / 3 波</span><strong id="objective">清除失控機器人</strong><small id="remaining"></small></div><div class="score">行動分數 <strong id="score">0000</strong></div><div id="crosshair">+</div><div id="hit">×</div><div id="notice" role="status"></div><div class="bottom"><div><small>特工生命</small><strong id="health">100</strong><div class="healthbar"><i id="healthbar"></i></div></div><div class="ammo"><small id="weapon">脈衝手槍</small><strong><span id="ammo">12</span><em id="capacity"> / 12</em></strong><span id="reloadText">R 換彈 · 2 切換裝備</span></div></div><button id="pauseButton">暫停</button><div id="desktopHelp">WASD 移動　R 換彈　V 視角　1 / 2 裝備</div></section>
-<div id="touch" hidden><div id="joystick"><i></i></div><div id="touchActions"><button id="viewTouch">視角</button><button id="weaponTouch">換槍</button><button id="reloadTouch">換彈</button><button id="aimTouch">瞄準</button><button id="fireTouch">射擊</button></div></div>
-<section id="pause" class="modal" hidden><div><div class="eyebrow">DUCK FORCE</div><h2>行動暫停</h2><p>準備好了，繼續守護城市。</p><button id="resume" class="primary">繼續行動</button><button id="quit">返回指揮部</button></div></section>
-<section id="result" class="modal" hidden><div><div class="eyebrow">MISSION REPORT</div><h2 id="resultTitle"></h2><p id="resultStats"></p><button id="again" class="primary">再次行動</button><button id="back">返回指揮部</button></div></section>
-<script type="module" src="/src/main.js"></script></body></html>
+<section id="hud" hidden>
+ <div class="radar-box"><canvas id="radar" width="220" height="220" aria-label="戰術雷達"></canvas><span id="zoneLabel">IRON DISTRICT</span></div>
+ <div class="match-top"><div class="match-line"><span id="wave">01 / 03</span><strong id="timer">04:00</strong><span id="killScore">00</span></div><div id="compass">N</div></div>
+ <div class="hud-right"><button id="pauseButton" aria-label="暫停遊戲">Ⅱ</button><span id="score">0000</span></div>
+ <div id="crosshair"><i></i><i></i><i></i><i></i></div><div id="hitmarker">×</div><div id="notice" role="status"></div><div id="killfeed"></div>
+ <div class="hud-health"><span>特工生命</span><div><b id="health">100</b><small>/ 100</small></div><div class="health-track"><i id="healthFill"></i></div></div>
+ <div class="hud-ammo"><span id="weaponName">AR-07</span><div><b id="ammo">30</b><small id="reserve">/ 150</small></div><span id="reloadLabel">AUTO / 5.56</span></div>
+ <div id="desktopHint">WASD 移動 <em>／</em> R 換彈 <em>／</em> C 蹲下 <em>／</em> 1 · 2 裝備</div>
+ <div id="posture">站立</div><div id="rotateHint">↻ 建議將手機轉為橫向</div>
+</section>
+<div id="touch" hidden><div id="stick" aria-label="移動搖桿"><i></i></div><button id="touchSprint" aria-pressed="false">疾跑</button><div class="touch-right"><button id="touchAim" aria-pressed="false">瞄準</button><button id="touchFire" aria-label="按住開火">開火</button><button id="touchReload">換彈</button><button id="touchCrouch" aria-pressed="false">蹲下</button><button id="touchSwitch">切槍</button></div></div>
+<section id="overlay" class="overlay" hidden><div class="overlay-card"><div class="eyebrow" id="overlayTag">TACTICAL PAUSE</div><h2 id="overlayTitle">行動暫停</h2><p id="overlayCopy">準備好後，繼續任務。</p><div id="stats"></div><button id="continue" class="start">繼續行動 <b>→</b></button><button id="return" class="return">返回行動部署</button></div></section>
+<div id="fatal" class="overlay" hidden><div class="overlay-card"><h2>無法啟動遊戲</h2><p id="fatalMessage">請使用支援 WebGL 2 的瀏覽器，並開啟硬體加速。</p><button onclick="location.reload()" class="return">重新載入</button></div></div>
+<script type="module" src="/src/main.js"></script>
+</body></html>
