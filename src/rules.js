@@ -27,7 +27,23 @@ export const DIFFICULTY = {
   normal: { hp: 90, damage: 9, interval: 1.35, accuracy: 0.48, time: 300 },
   hard: { hp: 115, damage: 13, interval: 1.05, accuracy: 0.62, time: 240 },
 };
-export const BOUNDS = { x: 32, z: 60 };
+export const BOUNDS = { x: 46, z: 82 };
+/**
+ * Nine named districts. The radar and HUD label read from this so a player who
+ * walks off the main avenue is told where they are; the enlarged map is only
+ * legible if every part of it has a name.
+ */
+export function sectorFor(x, z) {
+  if (z < -63) return 5;
+  if (z > 63) return 6;
+  if (z < -37) return 1;
+  if (z > 37) return 2;
+  if (x < -34) return 7;
+  if (x > 34) return 8;
+  if (x < -22) return 3;
+  if (x > 22) return 4;
+  return 0;
+}
 export function waveSize(wave, difficulty) {
   return 3 + wave + (difficulty === "hard" ? 2 : 0);
 }
@@ -83,8 +99,14 @@ export function formatTime(seconds) {
   );
 }
 // Grid route used only when a guard loses direct line of sight. Bounded breadth-first search.
+const ROUTE_STEP = 1.5;
+// The cap must cover the whole grid or long routes across the enlarged map would
+// be abandoned half-way; deriving it from BOUNDS keeps the two in step.
+const ROUTE_LIMIT = Math.ceil(
+  ((BOUNDS.x * 2) / ROUTE_STEP + 3) * ((BOUNDS.z * 2) / ROUTE_STEP + 3),
+);
 export function routeTo(from, to, boxes) {
-  const step = 1.5;
+  const step = ROUTE_STEP;
   const ix = (x) => Math.round(x / step),
     key = (x, z) => x + "," + z;
   const sx = ix(from.x),
@@ -93,8 +115,22 @@ export function routeTo(from, to, boxes) {
     tz = ix(to.z);
   const queue = [[sx, sz]],
     seen = new Map([[key(sx, sz), null]]);
+  // A blocked cell is reached from up to four neighbours; testing every box
+  // again each time is what makes a wide search expensive.
+  const walkable = new Map();
+  const open = (nx, nz, k) => {
+    let value = walkable.get(k);
+    if (value === undefined) {
+      value =
+        Math.abs(nx * step) <= BOUNDS.x - 0.7 &&
+        Math.abs(nz * step) <= BOUNDS.z - 0.7 &&
+        !blocked(nx * step, nz * step, boxes, 0.55);
+      walkable.set(k, value);
+    }
+    return value;
+  };
   let found = null;
-  for (let i = 0; i < queue.length && i < 6000; i++) {
+  for (let i = 0; i < queue.length && i < ROUTE_LIMIT; i++) {
     const [x, z] = queue[i];
     if (x === tx && z === tz) {
       found = [x, z];
@@ -109,13 +145,7 @@ export function routeTo(from, to, boxes) {
       const nx = x + dx,
         nz = z + dz,
         k = key(nx, nz);
-      if (
-        seen.has(k) ||
-        Math.abs(nx * step) > BOUNDS.x - 0.7 ||
-        Math.abs(nz * step) > BOUNDS.z - 0.7 ||
-        blocked(nx * step, nz * step, boxes, 0.55)
-      )
-        continue;
+      if (seen.has(k) || !open(nx, nz, k)) continue;
       seen.set(k, [x, z]);
       queue.push([nx, nz]);
     }

@@ -154,34 +154,58 @@ export function createLevel(kind = "foundry", low = false) {
     if (!batches.has(m)) batches.set(m, []);
     batches.get(m).push(geo);
   }
+  // Signs are collected first and baked into one atlas, so wayfinding across the
+  // enlarged map costs a single draw call however many boards it needs.
+  const signBoards = [];
   function sign(text, x, y, z, w, ry = 0) {
-    const c = document.createElement("canvas");
-    c.width = 512;
-    c.height = 128;
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = "#303938";
-    ctx.fillRect(0, 0, 512, 128);
-    ctx.strokeStyle = "#a99e79";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(5, 5, 502, 118);
-    ctx.fillStyle = "#d5cab0";
-    ctx.font = "bold 52px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, 256, 66);
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    const p = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, w / 4),
-      own(new THREE.MeshStandardMaterial({ map: t, roughness: 0.92 })),
+    signBoards.push({ text, x, y, z, w, ry });
+  }
+  function buildSigns() {
+    if (!signBoards.length) return;
+    const rows = signBoards.length;
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 128 * rows;
+    const ctx = canvas.getContext("2d");
+    signBoards.forEach((board, row) => {
+      const top = row * 128;
+      ctx.fillStyle = "#303938";
+      ctx.fillRect(0, top, 512, 128);
+      ctx.strokeStyle = "#a99e79";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(5, top + 5, 502, 118);
+      ctx.fillStyle = "#d5cab0";
+      ctx.font = "bold 52px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(board.text, 256, top + 66);
+    });
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const geometries = signBoards.map((board, row) => {
+      const geo = new THREE.PlaneGeometry(board.w, board.w / 4);
+      const uv = geo.attributes.uv;
+      // Row 0 is drawn at the top of the canvas, which flipY maps to v near 1.
+      for (let i = 0; i < uv.count; i++)
+        uv.setY(i, (uv.getY(i) + (rows - 1 - row)) / rows);
+      const transform = new THREE.Object3D();
+      transform.position.set(board.x, board.y, board.z);
+      transform.rotation.y = board.ry;
+      transform.updateMatrix();
+      return geo.applyMatrix4(transform.matrix);
+    });
+    const mesh = new THREE.Mesh(
+      mergeGeometries(geometries, false),
+      own(new THREE.MeshStandardMaterial({ map: texture, roughness: 0.92 })),
     );
-    p.position.set(x, y, z);
-    p.rotation.y = ry;
-    root.add(p);
-    rayTargets.push(p);
+    geometries.forEach((geometry) => geometry.dispose());
+    // Flat boards, unlike every other ray target, are not closed volumes.
+    mesh.userData.flat = true;
+    root.add(mesh);
+    rayTargets.push(mesh);
   }
   // Ground, two sidewalk heights and gutters. Roads remain continuously walkable.
-  box(M.road, 0, -0.12, 0, 120, 0.2, 130);
+  box(M.road, 0, -0.12, 0, 200, 0.2, 260);
   for (const s of [-1, 1]) {
     box(M.dark, s * 17, -0.015, 0, 6, 0.1, 72);
     box(M.stone, s * 13.9, 0.01, 0, 0.18, 0.14, 72);
@@ -189,10 +213,24 @@ export function createLevel(kind = "foundry", low = false) {
       box(M.dark, s * 14.15, 0.06, z, 0.04, 0.01, 2.95);
   }
   for (let z = -32; z < 34; z += 7) box(M.stripe, 0, 0.002, z, 0.1, 0.007, 2.6);
-  // Walls define the playable area; surrounding buildings continue beyond it.
+  // The old side wall becomes a segmented barrier. Three gateways and two open
+  // ends link the original district to the outer ring without losing its cover,
+  // so the enlarged map is one connected space rather than two arenas.
   for (const s of [-1, 1]) {
-    block(s * 33, 0, 1, 123, 2.8, M.dark);
-    block(0, s * 61, 67, 1, 3, M.dark);
+    for (const [z, d] of [
+      [-56, 24],
+      [-20, 22],
+      [20, 22],
+      [56, 24],
+    ]) {
+      block(s * 33, z, 1.1, d, 2.8, M.dark);
+      box(M.metal, s * 33, 2.96, z, 1.45, 0.2, d + 0.35);
+      for (const edge of [-1, 1])
+        cyl(M.rust, s * 33, 1.7, z + edge * (d / 2 - 0.35), 0.13, 3.4);
+    }
+    // Perimeter at the enlarged bounds; scenery continues beyond it.
+    block(s * 47, 0, 1.2, 167, 3.4, M.dark);
+    block(0, s * 83, 95, 1.2, 3.6, M.dark);
   }
   function facade(x, z, w, d, h, side, index) {
     block(x, z, w, d, h, index % 2 ? M.stone : M.brick);
@@ -414,16 +452,18 @@ export function createLevel(kind = "foundry", low = false) {
           );
       }
 
-    // Raised outer decks remain beyond the enlarged boundary, leaving side lanes open.
+    // Raised outer decks sit past the ring road, which is now walkable ground.
+    // Solid scenery inside the boundary would read as a wall the player walks
+    // straight through, so all of this starts outside the perimeter.
     for (const side of [-1, 1]) {
-      box(M.dark, side * 43, 3.8, 4, 15, 7.6, 75);
-      box(M.stone, side * 43, 7.8, 4, 16, 0.35, 76);
+      box(M.dark, side * 60, 3.8, 4, 15, 7.6, 75);
+      box(M.stone, side * 60, 7.8, 4, 16, 0.35, 76);
       for (let z = -31; z < 40; z += 3) {
-        box(M.stone, side * 35.4, 8.5, z, 0.55, 1.25, 0.45);
-        box(M.dark, side * 35.4, 8.98, z + 1.25, 0.25, 0.2, 2.8);
+        box(M.stone, side * 52.4, 8.5, z, 0.55, 1.25, 0.45);
+        box(M.dark, side * 52.4, 8.98, z + 1.25, 0.25, 0.2, 2.8);
       }
       for (let i = 0; i < 4; i++) {
-        const x = side * (47 + (i % 2) * 9),
+        const x = side * (72 + (i % 2) * 11),
           z = -40 + i * 23,
           h = 16 + ((i * 7) % 4) * 5;
         box(M.dark, x, h / 2, z, 9, h, 12);
@@ -436,7 +476,7 @@ export function createLevel(kind = "foundry", low = false) {
     for (let i = 0; i < 6; i++) {
       const x = -32 + i * 13,
         h = 19 + ((i * 11) % 5) * 4,
-        z = -67 - (i % 2) * 7;
+        z = -101 - (i % 2) * 9;
       box(M.dark, x, h / 2, z, 7 + (i % 3) * 2, h, 9);
       box(M.roof, x, h + 0.65, z, 8, 1.3, 10);
       for (let floor = 6; floor < h - 2; floor += 4)
@@ -466,9 +506,11 @@ export function createLevel(kind = "foundry", low = false) {
     for (let x = craneX - 18; x < craneX + 7; x += 2.5)
       beam([x, 29, craneZ], [x + 2.5, 30.2, craneZ], 0.07, M.rust);
     beam([craneX - 13, 29, craneZ], [craneX - 13, 18, craneZ], 0.025, M.black);
-    cyl(M.metal, -39, 19, -24, 2.7, 4.8);
-    cyl(M.roof, -39, 21.55, -24, 2.9, 0.3);
-    for (const x of [-41, -37])
+    // The reservoir stands on legs that begin above head height, so it belongs
+    // outside the perimeter where nobody can walk beneath them.
+    cyl(M.metal, -58, 19, -24, 2.7, 4.8);
+    cyl(M.roof, -58, 21.55, -24, 2.9, 0.3);
+    for (const x of [-60, -56])
       for (const z of [-26, -22]) beam([x, 8, z], [x, 16.6, z], 0.18, M.rust);
 
     // Service hatches and slab seams replace the visual rhythm of a pristine road.
@@ -648,21 +690,23 @@ export function createLevel(kind = "foundry", low = false) {
     for (let i = 0; i < 4; i++) {
       const x = -30 + i * 20,
         h = 26 + (i % 3) * 5;
+      // Pushed out past the enlarged boundary: the old distance put this where
+      // the north district's dry dock now stands.
       for (const dz of [-4, 4]) {
-        cyl(M.rust, x - 5, h / 2, -84 + dz, 0.75, h);
-        cyl(M.rust, x + 5, h / 2, -84 + dz, 0.75, h);
+        cyl(M.rust, x - 5, h / 2, -110 + dz, 0.75, h);
+        cyl(M.rust, x + 5, h / 2, -110 + dz, 0.75, h);
       }
-      beam([x - 5, h, -88], [x + 5, h, -88], 1.5, M.rust);
-      beam([x - 5, h, -80], [x + 5, h, -80], 1.5, M.rust);
-      beam([x - 20, h - 3, -84], [x + 16, h + 2, -84], 1.2, M.rust);
-      box(M.metal, x, h + 3.4, -84, 5, 5, 9);
+      beam([x - 5, h, -114], [x + 5, h, -114], 1.5, M.rust);
+      beam([x - 5, h, -106], [x + 5, h, -106], 1.5, M.rust);
+      beam([x - 20, h - 3, -110], [x + 16, h + 2, -110], 1.2, M.rust);
+      box(M.metal, x, h + 3.4, -110, 5, 5, 9);
     }
     for (let i = 0; i < 16; i++)
       box(
         i % 2 ? M.crate : M.crateWarm,
         -46 + i * 6,
         2 + (i % 3) * 2.6,
-        -72,
+        -97,
         5.4,
         (1 + (i % 3)) * 2.6,
         11,
@@ -782,6 +826,38 @@ export function createLevel(kind = "foundry", low = false) {
       box(M.black, side * 23.9, 6.76, z, 0.65, 0.15, 0.32);
       box(lampMaterial, side * 23.9, 6.66, z, 0.56, 0.025, 0.25);
       lampPositions.push(side * 23.9, 6.6, z);
+    }
+  }
+  // Outer ring road, the cross streets that reach it through the barrier
+  // gateways, and lamp masts that keep the ring readable at night.
+  for (const s of [-1, 1]) {
+    box(M.road, s * 39.5, -0.018, 0, 11, 0.035, 162);
+    for (let z = -76; z <= 76; z += 6)
+      box(M.stripe, s * 39.5, 0.004, z, 0.09, 0.012, 1.9);
+    for (const z of [-37.5, 0, 37.5]) {
+      box(M.dark, s * 36, -0.016, z, 13, 0.03, 10);
+      for (let x = 30.5; x < 45; x += 1.4)
+        box(M.stripe, s * x, 0.026, z, 0.5, 0.008, 1.2);
+    }
+    for (const z of [-50, 0, 50]) {
+      cyl(M.metal, s * 44.6, 3.7, z, 0.085, 7.4);
+      beam([s * 44.6, 7.4, z], [s * 42.5, 7.4, z], 0.075);
+      box(M.black, s * 42.5, 7.36, z, 0.72, 0.16, 0.34);
+      box(lampMaterial, s * 42.5, 7.24, z, 0.62, 0.026, 0.28);
+      lampPositions.push(s * 42.5, 7.18, z);
+    }
+  }
+  // Two new end districts continue the avenue past the original courtyards.
+  for (const z of [-71, 71]) {
+    box(M.dark, 0, -0.012, z, 64, 0.03, 22);
+    for (let lane = -24; lane <= 24; lane += 8)
+      box(M.stripe, lane, 0.012, z, 2.6, 0.01, 0.08);
+    for (const s of [-1, 1]) {
+      cyl(M.metal, s * 15.5, 3.5, z, 0.08, 7);
+      beam([s * 15.5, 7, z], [s * 13.6, 7, z], 0.07);
+      box(M.black, s * 13.6, 6.96, z, 0.68, 0.16, 0.32);
+      box(lampMaterial, s * 13.6, 6.85, z, 0.58, 0.026, 0.26);
+      lampPositions.push(s * 13.6, 6.79, z);
     }
   }
   // Continue the center pavement into the courtyards instead of stretching scenery.
@@ -1006,17 +1082,329 @@ export function createLevel(kind = "foundry", low = false) {
           box(M.stone, x * 1.1, 0.022, z, 1.03, 0.04, 2.86);
   }
   // Four readable signs identify the new destinations without adding billboard walls.
+  // The enlarged bounds need destinations, not empty tarmac: each location fills
+  // its ring road and both new end districts with cover its own theme supports.
+  if (kind === "foundry") {
+    for (const side of [-1, 1]) {
+      // Tank farm along the ring, with catwalks and pipe runs to the kerb.
+      for (const [z, r, h] of [
+        [-64, 3.4, 7.5],
+        [-12, 2.9, 6],
+        [34, 3.9, 8.5],
+      ]) {
+        cyl(M.rust, side * 43.2, h / 2, z, r, h);
+        for (let i = 0; i < 3; i++)
+          cyl(M.metal, side * 43.2, h * (0.28 + i * 0.26), z, r + 0.07, 0.18);
+        cyl(M.metal, side * 43.2, h + 0.22, z, r * 0.55, 0.44);
+        boxes.push({ x: side * 43.2, z, w: r, d: r, h });
+        for (let i = 0; i < 4; i++) {
+          const a = i * 1.57 + 0.4,
+            ox = Math.cos(a),
+            oz = Math.sin(a);
+          beam(
+            [side * 43.2 + ox * r, 0.62, z + oz * r],
+            [side * 43.2 + ox * (r + 1.7), 0.62, z + oz * (r + 1.7)],
+            0.09,
+            M.rust,
+          );
+          cyl(
+            M.metal,
+            side * 43.2 + ox * (r + 1.7),
+            0.32,
+            z + oz * (r + 1.7),
+            0.12,
+            0.64,
+          );
+        }
+      }
+      // Precast panels leaning on steel racks: waist-high crouch cover.
+      for (const z of [-40, 8, 56]) {
+        block(side * 36.5, z, 1.5, 7.5, 2.4, M.stone);
+        for (let i = 0; i < 4; i++)
+          box(
+            M.stone,
+            side * (36.5 + i * 0.3),
+            1.3,
+            z,
+            0.22,
+            2.5,
+            7.2,
+            0,
+            0.06 * i,
+          );
+        box(M.rust, side * 36.5, 0.13, z, 2.4, 0.26, 8);
+      }
+      // Transformer yard narrows the ring into a chicane instead of a wall.
+      block(side * 43.5, 64, 5, 8, 2.2, M.dark);
+      for (let i = 0; i < 3; i++) {
+        box(M.metal, side * 43.5 - 2 + i * 2, 3.1, 64, 1.3, 2.5, 2.6);
+        for (const c of [-1, 1])
+          cyl(M.glass, side * 43.5 - 2 + i * 2 + c * 0.4, 4.6, 64, 0.16, 1.1);
+      }
+    }
+    // North rail head: a spur, two hoppers, a loading ramp and a signal gantry.
+    for (const x of [-10, 10]) {
+      for (let z = -80; z < -58; z += 1.4)
+        box(M.wood, x, 0.06, z, 3.3, 0.12, 0.55);
+      for (const rail of [-0.72, 0.72])
+        box(M.metal, x + rail, 0.17, -69, 0.14, 0.15, 22);
+    }
+    for (const [x, z] of [
+      [-10, -76],
+      [10, -63],
+    ]) {
+      block(x, z, 3.4, 9.5, 3.2, M.rust);
+      for (const s of [-1, 1])
+        box(M.rust, x + s * 1.95, 2.3, z, 0.62, 3.4, 9.6, 0, s * 0.42);
+      box(M.metal, x, 0.52, z, 3.9, 0.5, 10.2);
+      for (const s of [-1, 1])
+        for (const d of [-3.6, 3.6])
+          cyl(M.black, x + s * 1.45, 0.42, z + d, 0.42, 0.34, Math.PI / 2);
+    }
+    block(0, -78, 10, 4, 1.3, M.stone);
+    for (let i = 0; i < 7; i++)
+      box(M.metal, -4.5 + i * 1.5, 1.46, -78, 1.2, 0.16, 4.2);
+    for (const x of [-16.5, 16.5]) {
+      cyl(M.rust, x, 4.5, -62, 0.2, 9);
+      boxes.push({ x, z: -62, w: 0.3, d: 0.3, h: 9 });
+    }
+    beam([-16.5, 8.8, -62], [16.5, 8.8, -62], 0.3, M.rust);
+    for (let x = -15; x < 16; x += 3.6) {
+      box(M.black, x, 8.2, -62, 0.5, 1.15, 0.4);
+      box(M.red, x, 8.5, -62.23, 0.24, 0.24, 0.06);
+    }
+    // South motor pool: parked trailers, a canopy and dropped barriers.
+    for (const side of [-1, 1])
+      for (let i = 0; i < 3; i++) {
+        const x = side * (8 + i * 8),
+          z = 64 + (i % 2) * 10;
+        block(x, z, 3, 9, 3.4, i % 2 ? M.metal : M.rust);
+        box(M.dark, x, 3.72, z, 3.3, 0.35, 9.3);
+        for (const d of [-3, 3])
+          for (const c of [-1, 1])
+            cyl(M.black, x + c * 1.5, 0.42, z + d, 0.44, 0.36, Math.PI / 2);
+      }
+    block(0, 79, 6, 3.5, 3, M.stone);
+    box(M.roof, 0, 3.25, 79, 14, 0.35, 5);
+    for (const x of [-6, 6]) cyl(M.metal, x, 1.6, 79, 0.16, 3.2);
+    for (const x of [-12, 12]) {
+      box(M.stripe, x, 0.92, 73, 8, 0.2, 0.2, 0, 0.12);
+      cyl(M.metal, x - Math.sign(x) * 3.8, 0.5, 73, 0.14, 1);
+    }
+  } else if (kind === "harbor") {
+    for (const side of [-1, 1]) {
+      // Reefer rows and a customs shed line the quay road.
+      for (const z of [-58, -16, 26]) {
+        for (let i = 0; i < 2; i++)
+          box(
+            i ? M.crate : M.metal,
+            side * 43.4,
+            1.4 + i * 2.82,
+            z + i * 1.6,
+            5.6,
+            2.75,
+            i ? 8.4 : 11,
+          );
+        boxes.push({ x: side * 43.4, z, w: 3.1, d: 5.6, h: 5.6 });
+        for (let i = 0; i < 5; i++)
+          box(M.black, side * 40.55, 1.5, z - 4 + i * 2, 0.05, 1.6, 1.1);
+      }
+      block(side * 36.5, 6, 1.6, 9, 2.6, M.metal);
+      for (let i = 0; i < 6; i++)
+        box(M.dark, side * 36.5, 1.3, 2 + i * 1.6, 1.8, 2.5, 0.1);
+      block(side * 43.5, 64, 5.5, 9, 3.2, M.dark);
+      box(M.roof, side * 43.5, 3.45, 64, 6.2, 0.3, 9.6);
+      box(neonMaterial, side * 43.5, 3.9, 64, 4, 0.34, 0.14);
+      lampPositions.push(side * 43.5, 3.85, 64);
+      for (const z of [-40, 46]) {
+        cyl(M.rust, side * 38, 0.4, z, 0.32, 0.8);
+        boxes.push({ x: side * 38, z, w: 0.34, d: 0.34, h: 0.9 });
+      }
+    }
+    // North dry dock: a sunken basin edge, a hull section and a service gantry.
+    box(M.stone, 0, 0.06, -72, 40, 0.12, 20);
+    for (const s of [-1, 1]) {
+      for (let i = 0; i < 6; i++)
+        box(M.stone, s * 17, 0.4 + i * 0.55, -72, 2.2 - i * 0.3, 0.5, 19);
+      // The stepped dock edge is solid, not a decorative staircase to clip through.
+      boxes.push({ x: s * 17, z: -72, w: 1.1, d: 9.5, h: 3.15 });
+      block(s * 19.5, -72, 2, 20, 2.6, M.dark);
+    }
+    // The hull sits at the head of the basin so the district stays walkable.
+    box(M.roof, 0, 4.4, -78, 13, 8.4, 9);
+    boxes.push({ x: 0, z: -78, w: 6.5, d: 4.5, h: 8.4 });
+    for (const s of [-1, 1])
+      box(M.roof, s * 6.6, 4.4, -78, 3.4, 7, 9, 0, s * 0.5);
+    for (let i = 0; i < 5; i++)
+      box(M.rust, -8 + i * 4, 0.8, -68.5, 1.2, 1.6, 1.2);
+    for (const x of [-13.5, 13.5]) {
+      cyl(M.rust, x, 5.2, -63, 0.28, 10.4);
+      boxes.push({ x, z: -63, w: 0.4, d: 0.4, h: 10.4 });
+    }
+    beam([-13.5, 10.2, -63], [13.5, 10.2, -63], 0.36, M.rust);
+    for (let x = -12; x < 13; x += 3)
+      beam([x, 10.2, -63], [x + 3, 11.3, -63], 0.09, M.rust);
+    // South fuel farm and tug berth.
+    for (const side of [-1, 1])
+      for (const [z, r, h] of [
+        [66, 4.2, 8],
+        [77, 3.2, 6.4],
+      ]) {
+        cyl(M.metal, side * (z > 70 ? 20 : 11), h / 2, z, r, h);
+        boxes.push({ x: side * (z > 70 ? 20 : 11), z, w: r, d: r, h });
+        for (let i = 0; i < 3; i++)
+          cyl(
+            M.rust,
+            side * (z > 70 ? 20 : 11),
+            h * (0.3 + i * 0.24),
+            z,
+            r + 0.07,
+            0.16,
+          );
+        beam(
+          [side * (z > 70 ? 20 : 11), h, z],
+          [side * (z > 70 ? 20 : 11) * 0.55, h - 1.2, z],
+          0.1,
+          M.rust,
+        );
+      }
+    box(M.roof, 0, 1.6, 79, 9, 3.2, 5);
+    boxes.push({ x: 0, z: 79, w: 4.5, d: 2.5, h: 3.2 });
+    box(M.metal, 0, 3.6, 79, 4, 1.6, 3.6);
+    box(M.glass, 0, 3.9, 76.9, 3.2, 0.9, 0.1);
+    cyl(M.rust, 0, 5.4, 80.5, 0.5, 3.6);
+    box(neonMaterial, 0, 3.3, 76.45, 3.2, 0.2, 0.1);
+    lampPositions.push(0, 3.25, 76.5);
+  } else {
+    for (const side of [-1, 1]) {
+      // Outer path: earth wall with tiled coping, bamboo stands and small gates.
+      for (const [z, d] of [
+        [-58, 26],
+        [-8, 22],
+        [42, 24],
+      ]) {
+        block(side * 44, z, 2.2, d, 2.5, M.sand);
+        box(M.roof, side * 44, 2.62, z, 3, 0.28, d + 0.4);
+        for (let i = 0; i < Math.floor(d / 3); i++)
+          box(
+            M.wood,
+            side * 42.85,
+            1.2,
+            z - d / 2 + 1.5 + i * 3,
+            0.1,
+            2.2,
+            0.16,
+          );
+      }
+      for (const z of [-34, 14, 62]) {
+        for (let i = 0; i < 7; i++) {
+          const bx = side * (37 + (i % 3) * 1.1),
+            bz = z - 3 + i * 1.05;
+          cyl(M.wood, bx, 3.2, bz, 0.09, 6.4);
+          for (let j = 0; j < 3; j++)
+            beam(
+              [bx, 4 + j * 0.9, bz],
+              [bx + Math.sin(i + j) * 0.9, 5.2 + j * 0.9, bz + Math.cos(i + j)],
+              0.03,
+              M.wood,
+            );
+        }
+        boxes.push({ x: side * 38, z, w: 1.8, d: 3.8, h: 2 });
+      }
+      for (const gateZ of [-20, 24]) {
+        for (const s of [-1, 1])
+          cyl(M.red, side * 39.5 + s * 2.4, 1.7, gateZ, 0.16, 3.4);
+        box(M.red, side * 39.5, 3.1, gateZ, 5.8, 0.24, 0.3);
+        box(M.black, side * 39.5, 3.55, gateZ, 6.6, 0.15, 0.55);
+      }
+    }
+    // North stone field: stupas, weathered statues and lantern rows.
+    for (let i = 0; i < 12; i++) {
+      const x = -18 + (i % 6) * 7.2,
+        z = -66 - Math.floor(i / 6) * 8.5;
+      block(x, z, 1.1, 1.1, 1.5, M.stone);
+      box(M.stone, x, 1.66, z, 1.5, 0.2, 1.5);
+      cyl(M.stone, x, 2.15, z, 0.42, 0.8);
+      box(M.stone, x, 2.66, z, 1.1, 0.22, 1.1);
+      if (i % 3 === 0) {
+        box(lampMaterial, x, 2.15, z, 0.3, 0.42, 0.3);
+        lampPositions.push(x, 2.15, z);
+      }
+    }
+    block(0, -79, 7, 3.5, 4.2, M.wood);
+    box(M.roof, 0, 4.5, -79, 11, 0.35, 6);
+    for (const s of [-1, 1])
+      box(M.roof, s * 2.6, 5.4, -79, 6, 0.2, 6, 0, s * 0.33);
+    for (let z = -83; z < -60; z += 3)
+      for (let x = -2; x <= 2; x++)
+        box(M.stone, x * 1.05, 0.02, z, 0.99, 0.04, 2.86);
+    // South water garden: a shallow pond, an arched bridge and a pavilion.
+    box(M.glass, 0, 0.03, 71, 34, 0.05, 15);
+    for (const s of [-1, 1]) {
+      block(s * 19, 71, 2, 16, 0.8, M.stone);
+      for (let i = 0; i < 5; i++)
+        block(s * (11 + (i % 2) * 2), 65 + i * 3, 1.6, 1.6, 0.55, M.stone);
+    }
+    // A flat plank causeway, not an arch: the player never leaves ground level,
+    // so a raised deck would be scenery walked straight through at chest height.
+    for (let i = 0; i < 9; i++)
+      box(M.wood, 0, 0.26, 63.5 + i * 1.9, 3.4, 0.14, 2);
+    for (let i = 0; i < 8; i++)
+      box(M.dark, 0, 0.16, 64.45 + i * 1.9, 3.5, 0.1, 0.22);
+    // Railing posts stand clear of the walked width and guide the crossing.
+    for (const s of [-1, 1])
+      for (let i = 0; i < 5; i++) {
+        const z = 64 + i * 3.6;
+        cyl(M.red, s * 2.1, 0.78, z, 0.09, 1.56);
+        box(M.red, s * 2.1, 1.42, z, 0.3, 0.12, 0.3);
+        boxes.push({ x: s * 2.1, z, w: 0.12, d: 0.12, h: 1.56 });
+      }
+    block(0, 80, 6, 5, 3.4, M.wood);
+    box(M.roof, 0, 3.7, 80, 9.5, 0.32, 8);
+    for (const s of [-1, 1])
+      box(M.roof, s * 2.4, 4.5, 80, 5, 0.2, 8, 0, s * 0.36);
+    for (const x of [-2.4, 2.4]) cyl(M.wood, x, 1.7, 77.2, 0.14, 3.4);
+  }
   const zoneSigns = {
-    foundry: ["NORTH / CARGO YARD", "SOUTH / EXTRACTION"],
-    temple: ["NORTH / SERVICE COURT", "SOUTH / STONE COURT"],
-    harbor: ["NORTH / CRANE APRON", "SOUTH / BERTH 07"],
-  }[kind] ?? ["NORTH", "SOUTH"];
-  sign(zoneSigns[0], 0, 4.8, -60.43, 8);
-  sign(zoneSigns[1], 0, 4.8, 60.43, 8, Math.PI);
+    foundry: [
+      "NORTH / RAIL HEAD",
+      "SOUTH / MOTOR POOL",
+      "CARGO YARD",
+      "EXTRACTION",
+      "WEST / RING ROAD",
+      "EAST / RING ROAD",
+    ],
+    temple: [
+      "NORTH / STONE FIELD",
+      "SOUTH / WATER GARDEN",
+      "SERVICE COURT",
+      "STONE COURT",
+      "WEST / OUTER PATH",
+      "EAST / OUTER PATH",
+    ],
+    harbor: [
+      "NORTH / DRY DOCK",
+      "SOUTH / FUEL FARM",
+      "CRANE APRON",
+      "BERTH 07",
+      "WEST / QUAY ROAD",
+      "EAST / QUAY ROAD",
+    ],
+  }[kind] ?? ["NORTH", "SOUTH", "", "", "WEST", "EAST"];
+  sign(zoneSigns[0], 0, 4.8, -82.43, 8);
+  sign(zoneSigns[1], 0, 4.8, 82.43, 8, Math.PI);
+  // Gateway boards name the district you are walking into, so each faces the
+  // approach from the new end district rather than the courtyard behind it.
+  sign(zoneSigns[2], 0, 3.6, -60.4, 6, Math.PI);
+  sign(zoneSigns[3], 0, 3.6, 60.4, 6);
   sign("WEST / SERVICE LANE", -32.44, 2.0, 0, 4, Math.PI / 2);
   sign("EAST / SERVICE LANE", 32.44, 2.0, 0, 4, -Math.PI / 2);
-  for (const z of [-60.25, 60.25])
+  sign(zoneSigns[4], -46.44, 2.4, 0, 5, Math.PI / 2);
+  sign(zoneSigns[5], 46.44, 2.4, 0, 5, -Math.PI / 2);
+  for (const z of [-82.25, 82.25])
     for (const x of [-4.25, 4.25]) cyl(M.metal, x, 2.65, z, 0.055, 5.3);
+  for (const z of [-60.25, 60.25])
+    for (const x of [-3.25, 3.25]) cyl(M.metal, x, 2.0, z, 0.05, 4);
 
   // Low sandbags are traversable visually but block movement. Crouching hides behind them.
   for (const [x, z] of [
@@ -1132,6 +1520,7 @@ export function createLevel(kind = "foundry", low = false) {
       add(geo, M.black, 0, 0, 0);
       geo.dispose();
     }
+  buildSigns();
   // Merge static surfaces by material to keep mobile draw calls low.
   for (const [m, geos] of batches) {
     const merged = mergeGeometries(geos, false);
@@ -1154,11 +1543,11 @@ export function createLevel(kind = "foundry", low = false) {
     }),
   );
   const puddleGeometries = [];
-  for (let i = 0; i < (low ? 18 : 28); i++) {
+  for (let i = 0; i < (low ? 30 : 46); i++) {
     const geometry = new THREE.CircleGeometry(1, low ? 12 : 20);
     const transform = new THREE.Object3D();
     transform.rotation.x = -Math.PI / 2;
-    transform.position.set((rand() - 0.5) * 54, 0.025, -56 + rand() * 112);
+    transform.position.set((rand() - 0.5) * 88, 0.025, -78 + rand() * 156);
     transform.scale.set(0.5 + rand() * 1.7, 0.8 + rand() * 2.9, 1);
     transform.updateMatrix();
     geometry.applyMatrix4(transform.matrix);
@@ -1279,9 +1668,11 @@ export function createLevel(kind = "foundry", low = false) {
   for (let i = 0; i < count; i++) {
     ages[i] = rand();
     if (i < ambientCount) {
-      positions[i * 3] = (rand() - 0.5) * 60;
+      // The mist volume follows the enlarged bounds. Its count is unchanged, so
+      // on-screen particle density falls rather than rises with the map.
+      positions[i * 3] = (rand() - 0.5) * 92;
       positions[i * 3 + 1] = 0.8 + rand() * 5;
-      positions[i * 3 + 2] = -58 + rand() * 116;
+      positions[i * 3 + 2] = -80 + rand() * 160;
       sizes[i] = 5 + rand() * 6;
       strengths[i] = 0.065;
     } else {
@@ -1340,12 +1731,14 @@ export function createLevel(kind = "foundry", low = false) {
   root.add(smoke);
 
   // Both locations have weather; the foundry uses a lighter industrial drizzle.
-  const rainCount = low ? 110 : 280;
+  // Rain draws as line segments, outside the particle budget, so its volume can
+  // grow with the map without adding transparent sprite overdraw.
+  const rainCount = low ? 190 : 460;
   const rainPositions = new Float32Array(rainCount * 6);
   for (let i = 0; i < rainPositions.length; i += 6) {
-    rainPositions[i] = (rand() - 0.5) * 62;
+    rainPositions[i] = (rand() - 0.5) * 94;
     rainPositions[i + 1] = rand() * 18;
-    rainPositions[i + 2] = (rand() - 0.5) * 118;
+    rainPositions[i + 2] = (rand() - 0.5) * 166;
     rainPositions[i + 3] = rainPositions[i] - 0.055;
     rainPositions[i + 4] = rainPositions[i + 1] - 0.45;
     rainPositions[i + 5] = rainPositions[i + 2];
@@ -1385,7 +1778,15 @@ export function createLevel(kind = "foundry", low = false) {
     { x: 7.5, z: 55.5 },
     { x: -27, z: -12 },
     { x: 27, z: 15 },
+    { x: -39.5, z: -24 },
+    { x: 39.5, z: 26 },
+    { x: -39.5, z: 46 },
+    { x: 39.5, z: -46 },
+    { x: -6.5, z: -71 },
+    { x: 6.5, z: 71 },
   ];
+  // Nine districts, in the order sectorFor returns. Every entry is a walkable
+  // point, so the connectivity test can route to each of them for real.
   const sectors =
     {
       foundry: [
@@ -1394,6 +1795,10 @@ export function createLevel(kind = "foundry", low = false) {
         { name: "南側撤離廣場", x: 0, z: 49 },
         { name: "西側維修巷", x: -27, z: 0 },
         { name: "東側巡邏巷", x: 27, z: 0 },
+        { name: "北端鐵道場", x: 0, z: -71 },
+        { name: "南端車輛場", x: 0, z: 71 },
+        { name: "西側外環道", x: -39.5, z: 0 },
+        { name: "東側外環道", x: 39.5, z: 0 },
       ],
       temple: [
         { name: "神社參道", x: 0, z: 0 },
@@ -1401,6 +1806,10 @@ export function createLevel(kind = "foundry", low = false) {
         { name: "南側石庭", x: 0, z: 49 },
         { name: "西側外廊", x: -27, z: 0 },
         { name: "東側外廊", x: 27, z: 0 },
+        { name: "北端石佛林", x: 0, z: -71 },
+        { name: "南端水庭", x: 0, z: 71 },
+        { name: "西側環山道", x: -39.5, z: 0 },
+        { name: "東側環山道", x: 39.5, z: 0 },
       ],
       harbor: [
         { name: "碼頭主道", x: 0, z: 0 },
@@ -1408,6 +1817,10 @@ export function createLevel(kind = "foundry", low = false) {
         { name: "南側泊位", x: 0, z: 49 },
         { name: "西側倉儲巷", x: -27, z: 0 },
         { name: "東側裝卸巷", x: 27, z: 0 },
+        { name: "北端乾塢", x: 0, z: -71 },
+        { name: "南端油庫", x: 0, z: 71 },
+        { name: "西側環港道", x: -39.5, z: 0 },
+        { name: "東側環港道", x: 39.5, z: 0 },
       ],
     }[kind] ?? [];
   return {
@@ -1424,7 +1837,7 @@ export function createLevel(kind = "foundry", low = false) {
       for (let i = 0; i < count; i++) {
         if (i < ambientCount) {
           positions[i * 3] += 0.16 * dt;
-          if (positions[i * 3] > 32) positions[i * 3] = -32;
+          if (positions[i * 3] > 46) positions[i * 3] = -46;
         } else {
           const emitter = emitters[Math.floor((i - ambientCount) / plumeCount)];
           ages[i] = (ages[i] + dt * 0.065) % 1;
