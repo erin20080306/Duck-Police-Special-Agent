@@ -1,0 +1,25 @@
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  border: 2px solid #99f5e0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 45%,
+    #4bb6a92b 100%
+  );
+  transition: opacity 0.2s;
+}
+body.shield-active::after {
+  opacity: 1;
+}
+body.shield-active #skillStatus {
+  color: #beffee;
+  border-color: #7ddcc4;
+}
+#touchSkill:disabled {
+  opacity: 0.6;
+}

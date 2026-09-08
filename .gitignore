@@ -3,3 +3,6 @@ dist/
 .env*
 .vercel/
 *.log
+
+# Local reconstruction evidence includes private reference images.
+.img2threejs/

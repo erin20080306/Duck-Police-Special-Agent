@@ -1,2 +1,6 @@
-import {defineConfig} from 'vite';
-export default defineConfig({build:{rollupOptions:{output:{manualChunks:{three:['three']}}}}});
+import { defineConfig } from "vite";
+import { offlineGame } from "./build/pwa.js";
+export default defineConfig({
+  plugins: [offlineGame()],
+  build: { rollupOptions: { output: { manualChunks: { three: ["three"] } } } },
+});
