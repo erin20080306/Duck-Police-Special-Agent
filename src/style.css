@@ -498,6 +498,29 @@ body.playing .film {
   right: 0;
   top: 14px;
 }
+/* The crosshair reports when aim assist has a target, so slower turning and the
+   slight pull are visible feedback rather than an unexplained change in feel. */
+#crosshair.locked i {
+  background: #f0bd6a;
+  box-shadow: 0 0 4px #f0bd6a99;
+}
+#crosshair.locked::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1px solid #f0bd6a66;
+  border-radius: 50%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  #crosshair.locked::after {
+    animation: lockPulse 0.9s ease-in-out infinite;
+  }
+}
+@keyframes lockPulse {
+  50% {
+    opacity: 0.35;
+  }
+}
 #hitmarker {
   position: absolute;
   left: 50%;

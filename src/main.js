@@ -1,6 +1,14 @@
 import "./style.css";
 import "./combat.css";
 import { touchLookDelta, smoothLook, steeringRate } from "./look.js";
+import {
+  assistLevel,
+  aimAssist,
+  adsSnapPull,
+  shortestAngle,
+} from "./aim-assist.js";
+import { bindGyro } from "./gyro.js";
+import { vibrate } from "./haptics.js";
 import { movementMode } from "./movement.js";
 import { bindTouchInput } from "./touch-input.js";
 import * as THREE from "three";
@@ -118,7 +126,14 @@ let skillCooldown = 0,
   resolutionScale = 1;
 const falling = [];
 const lookGoal = { yaw: 0, pitch: 0 };
+// Aim assist reads last frame's screen positions; one frame of latency is well
+// under a thumb's reaction time and keeps the work off the input handlers.
+const assist = { friction: 1, target: null, distance: 1 };
+const assistPoint = new THREE.Vector3();
+let adsSnapRemaining = 0,
+  lookInput = 0;
 let steerInput = 0;
+let haptics = true;
 let low = touch,
   level,
   sky,
@@ -273,6 +288,52 @@ function disposeActor(model) {
     if (o.geometry?.userData.owned) o.geometry.dispose();
   });
 }
+const MAPS = {
+  foundry: {
+    fog: 0x737976,
+    density: 0.021,
+    hemi: 0xc4cac5,
+    hemiIntensity: 1.6,
+    sun: 0xede1c7,
+    sunIntensity: 2.7,
+    environment: 0.3,
+    exposure: 1.04,
+    zone: "IRON DISTRICT",
+    weather: "陰天 / 工業廢墟",
+    brief:
+      "穿越廢棄工業街區，在掩體間阻擋喪屍群，躲避狙擊紅線。完成三波清剿，確保街區安全。",
+  },
+  temple: {
+    fog: 0x192a32,
+    density: 0.029,
+    hemi: 0x8ba7b6,
+    hemiIntensity: 1.3,
+    sun: 0x91afbd,
+    sunIntensity: 1.6,
+    environment: 0.17,
+    exposure: 1.15,
+    zone: "SHADOW SHRINE",
+    weather: "雨夜 / 近距離交戰",
+    brief:
+      "沿石燈籠穿越神社庭院，在雨幕中追蹤感染者，使用脈衝護盾突圍。完成三波清剿，確保通道安全。",
+  },
+  harbor: {
+    // Dark containers and wet asphalt reflect far less than the shrine's pale
+    // stone, so this map needs more ambient and moonlight to stay readable.
+    fog: 0x172833,
+    density: 0.023,
+    hemi: 0x93b3c6,
+    hemiIntensity: 1.78,
+    sun: 0x9dc0d4,
+    sunIntensity: 2.05,
+    environment: 0.24,
+    exposure: 1.28,
+    zone: "NEON HARBOR",
+    weather: "暴雨夜 / 貨櫃迷宮",
+    brief:
+      "暴雨中封鎖貨櫃碼頭：利用貨櫃夾道與吊掛區的高低差移動，注意龍門吊下的長廊視線。完成三波清剿，守住泊位。",
+  },
+};
 function setMap(value) {
   clearCombat();
   map = value;
@@ -296,23 +357,18 @@ function setMap(value) {
   level = createLevel(map, low);
   scene.add(level.root);
   sky = createSky(scene, map);
-  const night = map === "temple";
-  scene.fog = new THREE.FogExp2(
-    night ? 0x192a32 : 0x737976,
-    night ? 0.029 : 0.021,
-  );
-  hemi.color.set(night ? 0x8ba7b6 : 0xc4cac5);
-  hemi.intensity = night ? 1.3 : 1.6;
-  sun.color.set(night ? 0x91afbd : 0xede1c7);
-  sun.intensity = night ? 1.6 : 2.7;
-  scene.environmentIntensity = night ? 0.17 : 0.3;
-  renderer.toneMappingExposure = night ? 1.15 : 1.04;
+  const look = MAPS[map] ?? MAPS.foundry;
+  scene.fog = new THREE.FogExp2(look.fog, look.density);
+  hemi.color.set(look.hemi);
+  hemi.intensity = look.hemiIntensity;
+  sun.color.set(look.sun);
+  sun.intensity = look.sunIntensity;
+  scene.environmentIntensity = look.environment;
+  renderer.toneMappingExposure = look.exposure;
   applyQuality();
-  $("brief").textContent = night
-    ? "沿石燈籠穿越神社庭院，在雨幕中追蹤感染者，使用脈衝護盾突圍。完成三波清剿，確保通道安全。"
-    : "穿越廢棄工業街區，在掩體間阻擋喪屍群，躲避狙擊紅線。完成三波清剿，確保街區安全。";
-  $("mapWeather").textContent = night ? "雨夜 / 近距離交戰" : "陰天 / 工業廢墟";
-  $("zoneLabel").textContent = night ? "SHADOW SHRINE" : "IRON DISTRICT";
+  $("brief").textContent = look.brief;
+  $("mapWeather").textContent = look.weather;
+  $("zoneLabel").textContent = look.zone;
   document.querySelectorAll("[data-map]").forEach((b) => {
     b.classList.toggle("selected", b.dataset.map === map);
     b.setAttribute("aria-pressed", String(b.dataset.map === map));
@@ -349,6 +405,12 @@ function hud() {
 }
 function resetInput() {
   touchInput.reset();
+  // A resumed session must not replay the phone's old orientation as one flick.
+  gyro.recenter();
+  assist.friction = 1;
+  assist.target = null;
+  adsSnapRemaining = lookInput = 0;
+  $("crosshair").classList.remove("locked");
   steerInput = 0;
   lookGoal.yaw = yaw;
   lookGoal.pitch = pitch;
@@ -361,6 +423,14 @@ function resetInput() {
   lookId = null;
   $("stick").firstElementChild.style.transform = "";
   $("touchAim").setAttribute("aria-pressed", "false");
+}
+// Aiming down sights eases onto a target already inside the assist bubble, the
+// short pull mobile shooters use so the first ADS frame is not a fresh search.
+function setAim(value) {
+  if (aim === value) return;
+  aim = value;
+  if (value) adsSnapRemaining = 0.18;
+  $("touchAim").setAttribute("aria-pressed", String(aim));
 }
 function pointerLock() {
   if (touch) return;
@@ -549,6 +619,80 @@ function aimHit(x = 0, y = 0) {
     });
   return ray.intersectObjects(meshes, false)[0];
 }
+// Aim assist runs on phones only: a mouse already has the precision it lends.
+function updateAimAssist(dt) {
+  const previous = assist.target;
+  assist.friction = 1;
+  assist.target = null;
+  assist.distance = 1;
+  const tuning = assistLevel(touch ? $("aimAssist").value : "off");
+  if (state === "playing" && tuning.outer > 0) {
+    const aspect = Math.max(0.35, camera.aspect);
+    camera.updateMatrixWorld(true);
+    let best = null;
+    for (const actor of actors) {
+      const body = actor.model.position;
+      assistPoint.set(
+        body.x,
+        body.y + actor.model.userData.headHeight * 0.82,
+        body.z,
+      );
+      assistPoint.project(camera);
+      if (assistPoint.z > 1) continue;
+      const distance = Math.hypot(assistPoint.x * aspect, assistPoint.y);
+      if (!(distance < tuning.outer)) continue;
+      if (best && distance >= best.distance) continue;
+      // Cover blocks assist exactly as it blocks bullets.
+      if (lineBlocked(player.x, player.z, body.x, body.z, level.boxes, 1.1))
+        continue;
+      best = { actor, distance };
+    }
+    if (best) {
+      const turnSpeed = Math.min(1, lookInput / 0.022);
+      const { friction, pull } = aimAssist({
+        distance: best.distance,
+        level: tuning,
+        turnSpeed,
+        dt,
+      });
+      assist.friction = friction;
+      assist.target = best.actor;
+      assist.distance = best.distance;
+      const gain = Math.max(
+        pull,
+        adsSnapPull(best.distance, tuning, dt, adsSnapRemaining),
+      );
+      if (gain > 0) {
+        const body = best.actor.model.position;
+        assistPoint
+          .set(
+            body.x,
+            body.y + best.actor.model.userData.headHeight * 0.82,
+            body.z,
+          )
+          .sub(camera.position);
+        const length = Math.max(0.001, assistPoint.length());
+        lookGoal.yaw +=
+          shortestAngle(
+            lookGoal.yaw,
+            Math.atan2(-assistPoint.x, -assistPoint.z),
+          ) * gain;
+        lookGoal.pitch = THREE.MathUtils.clamp(
+          lookGoal.pitch +
+            (Math.asin(THREE.MathUtils.clamp(assistPoint.y / length, -1, 1)) -
+              lookGoal.pitch) *
+              gain,
+          -1.15,
+          1.15,
+        );
+      }
+    }
+  }
+  lookInput = 0;
+  adsSnapRemaining = Math.max(0, adsSnapRemaining - dt);
+  if (!!assist.target !== !!previous)
+    $("crosshair").classList.toggle("locked", !!assist.target);
+}
 let assistedClock = 0;
 function assistedTrigger(dt) {
   if (
@@ -607,6 +751,7 @@ function shoot() {
       $("hitmarker").style.color = head ? "#d6b579" : "#eee6cb";
       sound("hit");
       actor.stun = Math.max(actor.stun, 0.18);
+      vibrate(head ? "head" : "hit", haptics);
       if (actor.hp <= 0) killActor(actor, head);
     }
   }
@@ -702,6 +847,7 @@ function killActor(actor, head = false, skill = false) {
   feedTimer = 3.5;
   // Keep the silhouette briefly so a kill has readable weight rather than popping away.
   falling.push({ model: actor.model, life: 1.2 });
+  vibrate("kill", haptics);
   if (!actors.length) transition = 3;
 }
 function updateSkillHUD() {
@@ -729,6 +875,7 @@ function activateSkill() {
   skillCooldown = PULSE.cooldown;
   shieldRemaining = PULSE.shield;
   combatFX.pulse(player);
+  vibrate("skill", haptics);
   if (audio && !muted) {
     tone(170, 0.5, 0.16, "sine");
     tone(760, 0.3, 0.08, "triangle");
@@ -766,6 +913,7 @@ function hurt(amount) {
   health -= incomingDamage(amount, shieldRemaining);
   damage = shieldRemaining > 0 ? 0.18 : 0.7;
   sound("hurt");
+  vibrate("hurt", haptics);
   hud();
   if (health <= 0) finish(false);
 }
@@ -968,6 +1116,7 @@ function renderRadar() {
 let radarClock = 0;
 function tick(dt) {
   time += dt;
+  syncGyro();
   grade.uniforms.time.value = time;
   if (level) level.tick(dt, time);
   if (state === "playing") {
@@ -1092,6 +1241,7 @@ function tick(dt) {
     $("crosshair").style.transform =
       `translate(-50%,-50%) scale(${1 + recoil * 12 + (len > 0.1 ? 0.1 : 0)})`;
     if (fireHeld) shoot();
+    updateAimAssist(dt);
     assistedTrigger(dt);
     tickActors(dt);
     radarClock -= dt;
@@ -1182,19 +1332,19 @@ let lookId = null,
 function turn(dx, dy) {
   const sense = Number($("sensitivity").value);
   if (touch) {
-    const delta = touchLookDelta(
-      dx,
-      dy,
-      Math.min(innerWidth, innerHeight),
-      sense,
-      aim,
-    );
-    lookGoal.yaw += delta.yaw;
+    const shortEdge = Math.min(innerWidth, innerHeight);
+    const delta = touchLookDelta(dx, dy, shortEdge, sense, aim, {
+      adsScale: Number($("adsSensitivity").value),
+    });
+    // Rotational friction: the same swipe covers less angle over a target, so a
+    // thumb can settle on it. It scales input the player gave, never adds any.
+    lookGoal.yaw += delta.yaw * assist.friction;
     lookGoal.pitch = THREE.MathUtils.clamp(
-      lookGoal.pitch + delta.pitch,
+      lookGoal.pitch + delta.pitch * assist.friction,
       -1.15,
       1.15,
     );
+    lookInput += Math.hypot(dx, dy) / Math.max(320, shortEdge);
   } else {
     yaw -= dx * 0.002 * sense * (aim ? 0.62 : 1);
     pitch = THREE.MathUtils.clamp(
@@ -1224,7 +1374,7 @@ canvas.addEventListener("pointerdown", (e) => {
       semiReady = true;
       shoot();
     }
-    if (e.button === 2) aim = true;
+    if (e.button === 2) setAim(true);
   }
 });
 canvas.addEventListener("pointermove", (e) => {
@@ -1243,14 +1393,14 @@ function releaseLook(e) {
   if (e.pointerId === lookId) lookId = null;
   if (!touch) {
     if (e.button === 0) fireHeld = false;
-    if (e.button === 2) aim = false;
+    if (e.button === 2) setAim(false);
   }
 }
 addEventListener("pointerup", releaseLook);
 canvas.addEventListener("pointercancel", () => {
   lookId = null;
   fireHeld = false;
-  aim = false;
+  setAim(false);
 });
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 canvas.addEventListener("lostpointercapture", releaseLook);
@@ -1299,9 +1449,114 @@ const touchInput = bindTouchInput({
       shoot();
     }
   },
+  // A still tap on the aim area is a shot, so the aiming thumb never has to
+  // travel to the fire button for a single precise round.
+  onLookTap: () => {
+    if (state !== "playing") return;
+    semiReady = true;
+    shoot();
+  },
+  now: () => performance.now(),
 });
 $("touchReload").onclick = reload;
 $("touchSkill").onclick = activateSkill;
+// Aim settings persist per device: a tuned phone setup should survive a reload.
+function bindSetting(id, apply = () => {}) {
+  const el = $(id),
+    key = "duck-" + id;
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored !== null) {
+      if (el.tagName === "SELECT") {
+        if ([...el.options].some((o) => o.value === stored)) el.value = stored;
+      } else if (Number.isFinite(Number(stored))) el.value = stored;
+    }
+  } catch {
+    // Private browsing can refuse storage; defaults still apply.
+  }
+  const save = () => {
+    try {
+      localStorage.setItem(key, el.value);
+    } catch {
+      /* ignore */
+    }
+    apply();
+  };
+  el.addEventListener("change", save);
+  el.addEventListener("input", apply);
+  apply();
+  return el;
+}
+/**
+ * Gyroscope aiming. The thumb swings the view, the wrist lands the shot. It
+ * ships off: iOS gates motion behind a tap, and unrequested camera drift is
+ * worse than no gyro. "Only while aiming" is the gentlest way in.
+ */
+const gyro = bindGyro({
+  onDelta: ({ yaw: deltaYaw, pitch: deltaPitch }) => {
+    if (state !== "playing") return;
+    if ($("gyroMode").value === "ads" && !aim) return;
+    lookGoal.yaw += deltaYaw * assist.friction;
+    lookGoal.pitch = THREE.MathUtils.clamp(
+      lookGoal.pitch + deltaPitch * assist.friction,
+      -1.15,
+      1.15,
+    );
+    lookInput += Math.hypot(deltaYaw, deltaPitch) / 0.05;
+  },
+  getSensitivity: () => Number($("gyroSensitivity").value) * (aim ? 0.72 : 1),
+});
+let gyroGranted = !gyro.needsPermission;
+function gyroHint() {
+  $("gyroStatus").textContent = !gyro.supported
+    ? "此裝置未提供陀螺儀"
+    : $("gyroMode").value === "off"
+      ? "關閉時僅使用滑動與搖桿轉向"
+      : gyroGranted
+        ? "傾斜手機做細部修正，滑動仍可大幅轉向"
+        : "需要授權動作感測器";
+  $("gyroPermission").hidden =
+    !gyro.needsPermission || gyroGranted || $("gyroMode").value === "off";
+}
+$("gyroPermission").onclick = async () => {
+  gyroGranted = await gyro.request();
+  if (!gyroGranted) $("gyroMode").value = "off";
+  gyroHint();
+};
+function syncGyro() {
+  const wanted =
+    touch &&
+    state === "playing" &&
+    gyroGranted &&
+    gyro.supported &&
+    $("gyroMode").value !== "off";
+  if (wanted === gyro.running) return;
+  if (wanted) gyro.start();
+  else gyro.stop();
+}
+bindSetting("aimAssist");
+bindSetting("gyroMode", gyroHint);
+bindSetting("gyroSensitivity");
+bindSetting("adsSensitivity");
+$("haptics").onclick = () => {
+  haptics = !haptics;
+  $("haptics").textContent = "震動回饋：" + (haptics ? "開啟" : "關閉");
+  $("haptics").setAttribute("aria-pressed", String(haptics));
+  try {
+    localStorage.setItem("duck-haptics", String(haptics));
+  } catch {
+    /* ignore */
+  }
+  if (haptics) vibrate("hit", true);
+};
+try {
+  haptics = localStorage.getItem("duck-haptics") !== "false";
+} catch {
+  /* ignore */
+}
+$("haptics").textContent = "震動回饋：" + (haptics ? "開啟" : "關閉");
+$("haptics").setAttribute("aria-pressed", String(haptics));
+gyroHint();
 const controlMode = $("controlMode");
 try {
   controlMode.value =
@@ -1342,10 +1597,7 @@ function updateMovementStyle() {
 movementStyle.addEventListener("change", updateMovementStyle);
 updateMovementStyle();
 $("touchSwitch").onclick = () => switchGun(1 - gunIndex);
-$("touchAim").onclick = () => {
-  aim = !aim;
-  $("touchAim").setAttribute("aria-pressed", String(aim));
-};
+$("touchAim").onclick = () => setAim(!aim);
 $("touchCrouch").onclick = () => {
   crouch = !crouch;
   $("touchCrouch").setAttribute("aria-pressed", String(crouch));
@@ -1465,6 +1717,13 @@ if (import.meta.env.DEV) {
       player: player.toArray(),
       yaw,
       pitch,
+      lookGoal: { ...lookGoal },
+      assist: {
+        friction: assist.friction,
+        distance: assist.distance,
+        locked: !!assist.target,
+      },
+      map,
       health,
       wave,
       skillCooldown,

@@ -13,6 +13,10 @@ export function bindTouchInput({
   onFire,
   getMovementStyle = () => "strafe",
   onSteer = () => {},
+  onLookTap = () => {},
+  now = () => Date.now(),
+  tapWindow = 260,
+  dragThreshold = 3,
 }) {
   const ownedPointers = new Set();
   const controls = [];
@@ -98,7 +102,9 @@ export function bindTouchInput({
     for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) {
       element.addEventListener(name, (event) => {
         if (event.pointerId !== control.pointerId) return;
-        if (release(control)) end();
+        // The reason matters: only a real lift is a deliberate gesture. A cancel
+        // or a lost capture is the system taking the finger away.
+        if (release(control)) end(name);
       });
     }
   }
@@ -156,20 +162,39 @@ export function bindTouchInput({
     moveStick,
     stopMovement,
   );
+  // A short, still touch on the aim area is a shot, so the right thumb can aim
+  // and fire without leaving the screen. Rotation only starts past the drag
+  // threshold, which keeps that tap from nudging the crosshair off target.
+  let lookStart = 0,
+    lookDragged = false;
   bind(
     lookZone,
     (event) => {
       lookX = event.clientX;
       lookY = event.clientY;
+      lookStart = now();
+      lookDragged = false;
     },
     (event) => {
       const dx = event.clientX - lookX;
       const dy = event.clientY - lookY;
+      if (!lookDragged) {
+        if (Math.hypot(dx, dy) < dragThreshold) return;
+        lookDragged = true;
+      }
       lookX = event.clientX;
       lookY = event.clientY;
       onLook(dx, dy);
     },
-    () => {},
+    (reason) => {
+      if (
+        reason === "pointerup" &&
+        !lookDragged &&
+        now() - lookStart <= tapWindow
+      )
+        onLookTap();
+      lookDragged = false;
+    },
   );
   bind(
     fire,

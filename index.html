@@ -15,7 +15,7 @@
     <meta name="apple-mobile-web-app-title" content="鴨警特工" />
     <meta
       name="description"
-      content="鴨警特工：工業廢墟與雨夜神社的第一人稱戰術行動。支援電腦鍵鼠、手機觸控與安裝後離線遊玩。"
+      content="鴨警特工：工業廢墟、雨夜神社與霓虹港灣的第一人稱戰術行動。支援電腦鍵鼠、手機觸控輔助瞄準與陀螺儀，安裝後可離線遊玩。"
     />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
@@ -41,7 +41,7 @@
           ><button id="settingsTab" class="tab">操作設定</button>
         </nav>
         <div id="deployPanel">
-          <div class="section-label">選擇戰區 <span>02 LOCATIONS</span></div>
+          <div class="section-label">選擇戰區 <span>03 LOCATIONS</span></div>
           <div class="map-list">
             <button
               class="map-card selected"
@@ -58,6 +58,12 @@
               ><span
                 ><strong>雨夜神社</strong
                 ><small>SHADOW SHRINE / 夜間行動</small></span
+              ><i>↗</i></button
+            ><button class="map-card" data-map="harbor" aria-pressed="false">
+              <span class="map-number">03</span
+              ><span
+                ><strong>霓虹港灣</strong
+                ><small>NEON HARBOR / 貨櫃碼頭</small></span
               ><i>↗</i>
             </button>
           </div>
@@ -91,6 +97,35 @@
           >
           <p class="mode-copy">輔助模式僅對準未被掩體擋住的喪屍時開火。</p>
           <label class="setting"
+            >輔助瞄準<select id="aimAssist">
+              <option value="off">關閉 / 純手動</option>
+              <option value="light" selected>標準 / 減速＋微吸附</option>
+              <option value="strong">強化 / 大範圍吸附</option>
+            </select></label
+          >
+          <p class="mode-copy">
+            準星靠近未被遮擋的目標時降低轉向速度，並在你滑動時輕微吸附；不滑動就不會自己瞄準。
+          </p>
+          <label class="setting"
+            >陀螺儀瞄準<select id="gyroMode">
+              <option value="off" selected>關閉</option>
+              <option value="ads">僅瞄準時</option>
+              <option value="always">全時開啟</option>
+            </select></label
+          ><button id="gyroPermission" class="setting-button" hidden>
+            允許使用動作感測器 ↗
+          </button>
+          <p class="mode-copy" id="gyroStatus">關閉時僅使用滑動與搖桿轉向</p>
+          <label class="setting"
+            >陀螺儀靈敏度<input
+              id="gyroSensitivity"
+              type="range"
+              min="0.3"
+              max="2"
+              step="0.1"
+              value="0.9"
+          /></label>
+          <label class="setting"
             >左側滑動方式<select id="movementStyle">
               <option value="swipe" selected>單指轉向 / 上滑快跑</option>
               <option value="strafe">左右平移 / 右側轉向</option>
@@ -109,12 +144,22 @@
               max="1.8"
               step="0.1"
               value="1" /></label
+          ><label class="setting"
+            >開鏡靈敏度<input
+              id="adsSensitivity"
+              type="range"
+              min="0.3"
+              max="1.2"
+              step="0.05"
+              value="0.6" /></label
           ><button id="sound" class="setting-button" aria-pressed="true">
-            音效：開啟
+            音效：開啟</button
+          ><button id="haptics" class="setting-button" aria-pressed="true">
+            震動回饋：開啟
           </button>
           <p class="controls-copy">
             電腦：WASD 移動、左鍵開火、右鍵瞄準、R 換彈、Q 技能、Shift 疾跑、C
-            蹲下、1 / 2 切槍、Esc 暫停。<br /><br />手機：直向與橫向皆可玩。左側任意位置按住滑動：往上快跑、往下後退、左右轉向，放手即停；右側滑動可微調瞄準。也可在上方切換為左右平移。按住開火可連射；瞄準、技能、換彈、蹲下使用獨立按鍵。<br /><br />安裝到主畫面後可全螢幕啟動。首次請連線等待「離線戰區已備妥」再離線遊玩。
+            蹲下、1 / 2 切槍、Esc 暫停。<br /><br />手機：直向與橫向皆可玩。左側任意位置按住滑動：往上快跑、往下後退、左右轉向，放手即停。右側是瞄準區：滑動轉向（快滑轉得更快、慢滑更精準），輕點一下即射擊一發；準星鎖定目標時會變成琥珀色。也可在上方切換為左右平移。按住開火可連射；瞄準、技能、換彈、蹲下使用獨立按鍵。<br /><br />安裝到主畫面後可全螢幕啟動。首次請連線等待「離線戰區已備妥」再離線遊玩。
           </p>
         </div>
         <button id="start" class="start" disabled>
@@ -221,7 +266,7 @@
       </p>
       <ol id="installSteps"></ol>
       <p class="install-note">
-        第一次請保持連線，直到部署頁顯示「離線戰區已備妥」。之後兩個戰區皆可離線遊玩；瀏覽器清除網站資料後需重新下載。
+        第一次請保持連線，直到部署頁顯示「離線戰區已備妥」。之後三個戰區皆可離線遊玩；瀏覽器清除網站資料後需重新下載。
       </p>
       <button id="confirmInstall" class="start" hidden>
         安裝鴨警特工 <b>↗</b></button

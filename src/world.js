@@ -50,11 +50,6 @@ export function createLevel(kind = "foundry", low = false) {
     ownedMaterials.add(m);
     return m;
   };
-  const lampMaterial = own(
-    new THREE.MeshBasicMaterial({
-      color: kind === "foundry" ? 0xffe6b3 : 0xffbf72,
-    }),
-  );
   const M = {
     stone: material("stone", 0x848078, 0.91, 0, true),
     dark: material("dark", 0x464843, 0.91, 0, true),
@@ -69,7 +64,44 @@ export function createLevel(kind = "foundry", low = false) {
     red: material("red", 0x652d25, 0.85),
     roof: material("roof", 0x323b3b, 0.6, 0.32),
     stripe: material("stripe", 0xaaa18a, 0.9),
+    crate: material("crate", 0x2f5a60, 0.74, 0.34),
+    crateWarm: material("crateWarm", 0x7a4132, 0.78, 0.3),
   };
+  // Everything that only differs by tone between locations lives here, so the
+  // geometry below reads as layout rather than a chain of per-map ternaries.
+  const THEMES = {
+    foundry: {
+      lamp: 0xffe6b3,
+      halo: 0xffdfad,
+      smoke: 0x869195,
+      rain: 0.09,
+      crossings: [-22, -8, 6, 20],
+      cabinet: M.rust,
+      streetLights: false,
+    },
+    temple: {
+      lamp: 0xffbf72,
+      halo: 0xffbd79,
+      smoke: 0x6e858c,
+      rain: 0.18,
+      crossings: [-18, 0, 18],
+      cabinet: M.stone,
+      streetLights: false,
+    },
+    harbor: {
+      lamp: 0xd6f4ff,
+      halo: 0x9fe4ff,
+      smoke: 0x55707f,
+      rain: 0.24,
+      crossings: [-20, -4, 14],
+      cabinet: M.metal,
+      streetLights: true,
+    },
+  };
+  const theme = THEMES[kind] ?? THEMES.foundry;
+  const lampMaterial = own(new THREE.MeshBasicMaterial({ color: theme.lamp }));
+  // One neon tone, not two: every extra material is another mobile draw call.
+  const neonMaterial = own(new THREE.MeshBasicMaterial({ color: 0x63e6ff }));
   function add(
     geo,
     m,
@@ -456,6 +488,185 @@ export function createLevel(kind = "foundry", low = false) {
     }
     sign("KEEP CLEAR", 6, 2.1, -5.47, 2.5);
     sign("EVACUATION →", -13.76, 3.4, -13, 3.8, Math.PI / 2);
+  } else if (kind === "harbor") {
+    // Stacked containers take the place of street facades: the same lane
+    // discipline as the foundry, but cover is colour-coded, staggered in height
+    // and split by loading gaps that open cross-lane sightlines.
+    const stackColors = [M.crate, M.crateWarm, M.rust, M.metal, M.dark];
+    function container(x, y, z, m, length = 11.2, width = 5.8, height = 2.75) {
+      box(m, x, y + height / 2, z, width, height, length);
+      for (let i = -length / 2 + 0.7; i < length / 2 - 0.4; i += 0.86)
+        for (const s of [-1, 1])
+          box(
+            M.dark,
+            x + s * (width / 2 + 0.014),
+            y + height / 2,
+            z + i,
+            0.028,
+            height - 0.4,
+            0.17,
+          );
+      for (const s of [-1, 1]) {
+        box(
+          M.dark,
+          x,
+          y + 0.13,
+          z + s * (length / 2 - 0.07),
+          width + 0.07,
+          0.26,
+          0.2,
+        );
+        box(
+          M.dark,
+          x,
+          y + height - 0.13,
+          z + s * (length / 2 - 0.07),
+          width + 0.07,
+          0.26,
+          0.2,
+        );
+      }
+      // Door end: two leaves with locking rods, so a stack has a readable front.
+      for (const s of [-1, 1])
+        box(
+          M.metal,
+          x + s * 1.35,
+          y + height / 2,
+          z + length / 2 + 0.03,
+          0.07,
+          height - 0.55,
+          0.05,
+        );
+      box(M.dark, x, y + height + 0.04, z, width + 0.06, 0.08, length + 0.06);
+    }
+    for (const side of [-1, 1])
+      for (let i = 0; i < 6; i++) {
+        const z = -31 + i * 12.6,
+          x = side * (17.4 + (i % 2) * 1.1);
+        // The shed occupies one slot per side; everything else stacks.
+        if (i === 3) continue;
+        const tiers = 1 + ((i + (side < 0 ? 2 : 0)) % 3);
+        for (let tier = 0; tier < tiers; tier++)
+          container(
+            x + (tier % 2 ? 0.55 : -0.4),
+            tier * 2.82,
+            z + (tier % 2 ? 1.4 : -1.1) * (tier ? 1 : 0),
+            stackColors[(i + tier * 2) % stackColors.length],
+            tier ? 8.6 : 11.2,
+          );
+        boxes.push({ x, z, w: 3.35, d: 5.9, h: tiers * 2.82 });
+      }
+    // Corrugated transit shed with an arched truss roof over the quay: the long
+    // covered sightline that gives the map its silhouette.
+    for (const side of [-1, 1]) {
+      const x = side * 19.5,
+        z = 6.8;
+      block(x, z, 9.5, 15.5, 5.6, M.metal);
+      for (let i = -7; i < 7.5; i += 0.7)
+        box(M.dark, x - side * 4.78, 2.9, z + i, 0.035, 5.2, 0.22);
+      box(M.roof, x, 5.85, z, 10.8, 0.4, 16.6);
+      for (let i = 0; i <= 9; i++) {
+        const a = (i / 9) * Math.PI;
+        const rx = x - side * (Math.cos(a) * 5.3),
+          ry = 6.05 + Math.sin(a) * 3.1;
+        if (i < 9) {
+          const b = ((i + 1) / 9) * Math.PI;
+          for (const zz of [z - 7.6, z, z + 7.6])
+            beam(
+              [rx, ry, zz],
+              [x - side * (Math.cos(b) * 5.3), 6.05 + Math.sin(b) * 3.1, zz],
+              0.13,
+              M.rust,
+            );
+        }
+        beam([rx, ry, z - 7.6], [rx, ry, z + 7.6], 0.07, M.rust);
+      }
+      // Loading bay: shutter, dock light and a lit interior slot.
+      box(M.black, x - side * 4.85, 1.85, z, 0.06, 3.7, 5.4);
+      box(M.metal, x - side * 4.9, 3.75, z, 0.12, 0.35, 5.8);
+      box(neonMaterial, x - side * 4.92, 4.35, z, 0.06, 0.16, 4.6);
+      lampPositions.push(x - side * 5.1, 4.3, z);
+    }
+    sign("BERTH 07 / 貨櫃調度", -14.2, 4.6, 6.8, 6, Math.PI / 2);
+    sign("HARBOUR CONTROL / 港務管制", 14.2, 4.6, 6.8, 6, -Math.PI / 2);
+    // Conveyor bridge crossing the quay, the harbour answer to the foundry gantry.
+    for (const x of [-12.4, 12.4]) {
+      cyl(M.rust, x, 4.6, -20, 0.24, 9.2);
+      cyl(M.rust, x, 4.6, -16.4, 0.16, 9.2);
+      beam([x, 9.2, -20], [x, 5.4, -16.4], 0.1, M.rust);
+    }
+    beam([-12.4, 9.2, -20], [12.4, 9.2, -20], 0.4, M.rust);
+    beam([-12.4, 9.2, -16.6], [12.4, 9.2, -16.6], 0.4, M.rust);
+    beam([-12.4, 10.4, -18.3], [12.4, 10.4, -18.3], 0.24, M.rust);
+    for (let x = -12; x < 12; x += 2.4) {
+      beam([x, 9.2, -20], [x + 2.4, 10.4, -18.3], 0.075, M.rust);
+      beam([x + 2.4, 9.2, -16.6], [x, 10.4, -18.3], 0.075, M.rust);
+      box(M.metal, x + 1.2, 9.35, -18.3, 2.2, 0.1, 3.1);
+    }
+    // Rail-mounted crane track and quayside bollards with slack mooring lines.
+    for (const s of [-1, 1]) {
+      box(M.metal, s * 12.55, 0.055, 0, 0.34, 0.11, 70);
+      box(M.rust, s * 12.55, 0.02, 0, 0.62, 0.04, 70);
+      for (let z = -30; z <= 30; z += 10) {
+        cyl(M.black, s * 13.55, 0.36, z, 0.29, 0.72);
+        cyl(M.black, s * 13.55, 0.78, z, 0.36, 0.16);
+        boxes.push({ x: s * 13.55, z, w: 0.32, d: 0.32, h: 0.9 });
+        if (z < 30) {
+          const rope = [];
+          for (let i = 0; i <= 6; i++) {
+            const t = i / 6;
+            rope.push([
+              s * 13.55,
+              0.78 - Math.sin(t * Math.PI) * 0.42,
+              z + t * 10,
+            ]);
+          }
+          for (let i = 0; i < 6; i++) beam(rope[i], rope[i + 1], 0.035, M.sand);
+        }
+      }
+    }
+    // Neon-lit dock offices at the ends of the avenue keep the axis readable.
+    for (const [x, z, ry] of [
+      [-8.5, -33.5, 0],
+      [8.5, 33.5, Math.PI],
+    ]) {
+      block(x, z, 7, 6, 4.2, M.dark);
+      box(M.roof, x, 4.4, z, 7.6, 0.3, 6.6);
+      for (const xx of [-2, 0, 2])
+        box(M.glass, x + xx, 2.5, z - Math.sign(z || 1) * 3.05, 1.5, 1.7, 0.06);
+      box(neonMaterial, x, 4.9, z, 5.4, 0.5, 0.16, ry);
+      lampPositions.push(x, 4.9, z);
+      // Phones already carry the two street lamps; extra point lights are desktop only.
+      if (!low) {
+        const light = new THREE.PointLight(0x74d8ff, 8, 12, 2);
+        light.position.set(x, 4.2, z);
+        root.add(light);
+        lights.push(light);
+      }
+    }
+    // Distant harbour skyline: ship-to-shore cranes and a container terminal.
+    for (let i = 0; i < 4; i++) {
+      const x = -30 + i * 20,
+        h = 26 + (i % 3) * 5;
+      for (const dz of [-4, 4]) {
+        cyl(M.rust, x - 5, h / 2, -84 + dz, 0.75, h);
+        cyl(M.rust, x + 5, h / 2, -84 + dz, 0.75, h);
+      }
+      beam([x - 5, h, -88], [x + 5, h, -88], 1.5, M.rust);
+      beam([x - 5, h, -80], [x + 5, h, -80], 1.5, M.rust);
+      beam([x - 20, h - 3, -84], [x + 16, h + 2, -84], 1.2, M.rust);
+      box(M.metal, x, h + 3.4, -84, 5, 5, 9);
+    }
+    for (let i = 0; i < 16; i++)
+      box(
+        i % 2 ? M.crate : M.crateWarm,
+        -46 + i * 6,
+        2 + (i % 3) * 2.6,
+        -72,
+        5.4,
+        (1 + (i % 3)) * 2.6,
+        11,
+      );
   } else {
     // Stone perimeter houses and a long vermilion shrine approach.
     for (const side of [-1, 1])
@@ -553,21 +764,14 @@ export function createLevel(kind = "foundry", low = false) {
     box(M.road, side * 27, -0.018, 0, 8, 0.035, 118);
     for (let z = -55; z <= 55; z += 6)
       box(M.stripe, side * 27, 0.004, z, 0.085, 0.012, 1.8);
-    for (const z of kind === "foundry" ? [-22, -8, 6, 20] : [-18, 0, 18]) {
+    for (const z of theme.crossings) {
       box(M.dark, side * 21, 0.008, z, 11, 0.032, 1.65);
       for (let x = 15; x < 29; x += 1.3)
         box(M.stripe, side * x, 0.028, z, 0.55, 0.008, 1.1);
     }
     // Recessed service cabinets and low offset cover leave the alley continuous.
     for (const z of [-23, 7, 27]) {
-      block(
-        side * 30.4,
-        z,
-        1.6,
-        3.2,
-        1.45,
-        kind === "foundry" ? M.rust : M.stone,
-      );
+      block(side * 30.4, z, 1.6, 3.2, 1.45, theme.cabinet);
       box(M.metal, side * 30.4, 1.52, z, 1.75, 0.12, 3.4);
       for (let i = 0; i < 4; i++)
         box(M.black, side * 29.585, 0.94, z - 1.1 + i * 0.65, 0.025, 0.4, 0.35);
@@ -649,6 +853,105 @@ export function createLevel(kind = "foundry", low = false) {
     landingRing.dispose();
     for (const x of [-1.2, 1.2]) box(M.stripe, x, 0.022, 53, 0.16, 0.014, 3.0);
     box(M.stripe, 0, 0.022, 53, 2.5, 0.014, 0.16);
+  } else if (kind === "harbor") {
+    // North apron: two rail portal cranes straddle the road, so the long axis
+    // stays open while their legs and container blocks break up the approach.
+    for (const z of [-44, -54]) {
+      for (const side of [-1, 1])
+        for (const dz of [-1.5, 1.5]) {
+          cyl(M.rust, side * 13.6, 5.6, z + dz, 0.34, 11.2);
+          cyl(M.rust, side * 21.5, 5.6, z + dz, 0.34, 11.2);
+          beam(
+            [side * 13.6, 11, z + dz],
+            [side * 21.5, 11, z + dz],
+            0.24,
+            M.rust,
+          );
+          beam([side * 13.6, 3, z + dz], [side * 21.5, 8, z + dz], 0.1, M.rust);
+          boxes.push({ x: side * 13.6, z: z + dz, w: 0.5, d: 0.5, h: 11.2 });
+          boxes.push({ x: side * 21.5, z: z + dz, w: 0.5, d: 0.5, h: 11.2 });
+        }
+      beam([-21.5, 11.4, z], [21.5, 11.4, z], 0.42, M.rust);
+      beam([-21.5, 12.6, z], [21.5, 12.6, z], 0.2, M.rust);
+      for (let x = -21; x < 21; x += 3) {
+        beam([x, 11.4, z], [x + 3, 12.6, z], 0.08, M.rust);
+        beam([x + 3, 11.4, z], [x, 12.6, z], 0.08, M.rust);
+      }
+      // Trolley and a suspended spreader hang over the lane without blocking it.
+      const trolley = z === -44 ? -6 : 7;
+      box(M.metal, trolley, 11.9, z, 4.2, 1.5, 3.4);
+      for (const s of [-1, 1])
+        beam(
+          [trolley + s * 1.6, 11.2, z],
+          [trolley + s * 1.6, 7.4, z],
+          0.05,
+          M.metal,
+        );
+      box(M.crateWarm, trolley, 6.8, z, 5.6, 1.2, 10.4);
+      box(M.metal, 0, 0.05, z, 44, 0.1, 0.4);
+    }
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 3; i++)
+        box(
+          i % 2 ? M.crate : M.crateWarm,
+          side * (17 + (i % 2)),
+          1.4 + i * 2.82,
+          -49 + (i % 2) * 2,
+          5.8,
+          2.75,
+          i ? 8.6 : 11.2,
+        );
+      boxes.push({ x: side * 17.5, z: -49, w: 3.3, d: 5.8, h: 8.5 });
+      block(side * 27.5, -56, 5, 7, 3.4, M.metal);
+    }
+    // South berth: a moored hull closes the far edge behind a lit gangway.
+    box(M.roof, 20.5, 3, 56.5, 20, 6.4, 5);
+    boxes.push({ x: 20.5, z: 56.5, w: 10, d: 2.5, h: 6.4 });
+    for (let i = 0; i < 9; i++)
+      box(M.dark, 11.5 + i * 2.2, 4.6, 53.95, 1.5, 1.1, 0.12);
+    for (let i = 0; i < 5; i++)
+      box(M.rust, 11 + i * 4.8, 0.35, 53.9, 0.5, 0.7, 0.5);
+    box(M.metal, 12.5, 6.5, 56.5, 5, 1.6, 4.4);
+    box(M.glass, 12.5, 6.9, 54.28, 4, 0.8, 0.1);
+    cyl(M.rust, 24.5, 8.4, 56.5, 0.6, 4.5);
+    box(neonMaterial, 20.5, 5.5, 53.92, 7, 0.4, 0.1);
+    lampPositions.push(20.5, 5.4, 53.9);
+    for (let i = 0; i < 7; i++)
+      box(
+        M.metal,
+        10.2 - i * 0.55,
+        2.4 + i * 0.62,
+        51 - i * 0.4,
+        2.6,
+        0.12,
+        1.3,
+        0,
+        -0.85,
+      );
+    for (const s of [-1, 1]) {
+      box(M.metal, 9.3, 3.6, 51.4 + s * 0.62, 0.07, 1.5, 5.4, 0, -0.85);
+      box(M.rust, s * 8, 0.05, 47, 0.34, 0.11, 18);
+    }
+    // Stacked crates and a reefer row give the extraction pad usable cover.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 2; i++)
+        block(
+          side * (16 + i * 6.6),
+          44 + i * 5,
+          5.6,
+          9.4,
+          2.75,
+          i % 2 ? M.crate : M.crateWarm,
+        );
+      block(side * 13.6, 52, 2.2, 2.2, 1.5, M.rust);
+      for (let i = 0; i < 4; i++)
+        box(M.metal, side * 13.6, 1.6, 51 + i * 0.62, 2.3, 0.09, 0.3);
+    }
+    const landingRing = new THREE.RingGeometry(4.65, 4.77, 32);
+    add(landingRing, M.stripe, 0, 0.018, 51, 1, 1, 1, -Math.PI / 2);
+    landingRing.dispose();
+    for (const x of [-1.2, 1.2]) box(M.stripe, x, 0.022, 51, 0.16, 0.014, 3.0);
+    box(M.stripe, 0, 0.022, 51, 2.5, 0.014, 0.16);
   } else {
     // Northern temple service court: subdued stone beds, bare trees and old stores.
     // Beds and buildings have physical collision; their central axis stays open.
@@ -703,21 +1006,13 @@ export function createLevel(kind = "foundry", low = false) {
           box(M.stone, x * 1.1, 0.022, z, 1.03, 0.04, 2.86);
   }
   // Four readable signs identify the new destinations without adding billboard walls.
-  sign(
-    kind === "foundry" ? "NORTH / CARGO YARD" : "NORTH / SERVICE COURT",
-    0,
-    4.8,
-    -60.43,
-    8,
-  );
-  sign(
-    kind === "foundry" ? "SOUTH / EXTRACTION" : "SOUTH / STONE COURT",
-    0,
-    4.8,
-    60.43,
-    8,
-    Math.PI,
-  );
+  const zoneSigns = {
+    foundry: ["NORTH / CARGO YARD", "SOUTH / EXTRACTION"],
+    temple: ["NORTH / SERVICE COURT", "SOUTH / STONE COURT"],
+    harbor: ["NORTH / CRANE APRON", "SOUTH / BERTH 07"],
+  }[kind] ?? ["NORTH", "SOUTH"];
+  sign(zoneSigns[0], 0, 4.8, -60.43, 8);
+  sign(zoneSigns[1], 0, 4.8, 60.43, 8, Math.PI);
   sign("WEST / SERVICE LANE", -32.44, 2.0, 0, 4, Math.PI / 2);
   sign("EAST / SERVICE LANE", 32.44, 2.0, 0, 4, -Math.PI / 2);
   for (const z of [-60.25, 60.25])
@@ -806,7 +1101,7 @@ export function createLevel(kind = "foundry", low = false) {
       box(M.black, s * 11.3, 6.58, z, 0.65, 0.15, 0.3);
       box(lampMaterial, s * 11.3, 6.49, z, 0.55, 0.02, 0.25);
       lampPositions.push(s * 11.3, 6.43, z);
-      if (kind === "foundry" && z === 4) {
+      if ((kind === "foundry" || theme.streetLights) && z === 4) {
         const light = new THREE.PointLight(0xffdba2, low ? 5 : 10, 11, 2);
         light.position.set(s * 11.3, 6.15, z);
         root.add(light);
@@ -930,7 +1225,7 @@ export function createLevel(kind = "foundry", low = false) {
       blending: THREE.AdditiveBlending,
       uniforms: {
         color: {
-          value: new THREE.Color(kind === "foundry" ? 0xffdfad : 0xffbd79),
+          value: new THREE.Color(theme.halo),
         },
       },
       vertexShader: `
@@ -955,19 +1250,27 @@ export function createLevel(kind = "foundry", low = false) {
   const ambientCount = low ? 22 : 40,
     plumeCount = low ? 4 : 7;
   const emitters =
-    kind === "foundry"
-      ? [
-          [-27, 24, -85],
-          [-10, 26, -85],
-          [7, 28, -85],
-          [24, 30, -85],
-          [-12.8, 0.6, -17],
-          [12.8, 0.6, 14],
-        ]
-      : [
-          [-12, 0.4, -20],
-          [12, 0.4, 17],
-        ];
+    {
+      foundry: [
+        [-27, 24, -85],
+        [-10, 26, -85],
+        [7, 28, -85],
+        [24, 30, -85],
+        [-12.8, 0.6, -17],
+        [12.8, 0.6, 14],
+      ],
+      temple: [
+        [-12, 0.4, -20],
+        [12, 0.4, 17],
+      ],
+      harbor: [
+        [22, 9, -78],
+        [-24, 8, -78],
+        [-13.4, 0.5, -6],
+        [13.4, 0.5, 22],
+        [8.5, 3.2, 47],
+      ],
+    }[kind] ?? [];
   const count = ambientCount + emitters.length * plumeCount;
   const positions = new Float32Array(count * 3),
     sizes = new Float32Array(count);
@@ -1007,7 +1310,7 @@ export function createLevel(kind = "foundry", low = false) {
       depthWrite: false,
       uniforms: {
         color: {
-          value: new THREE.Color(kind === "foundry" ? 0x869195 : 0x6e858c),
+          value: new THREE.Color(theme.smoke),
         },
       },
       vertexShader: `
@@ -1058,7 +1361,7 @@ export function createLevel(kind = "foundry", low = false) {
       new THREE.LineBasicMaterial({
         color: 0x9cbbc5,
         transparent: true,
-        opacity: kind === "foundry" ? 0.09 : 0.18,
+        opacity: theme.rain,
         depthWrite: false,
       }),
     ),
@@ -1084,21 +1387,29 @@ export function createLevel(kind = "foundry", low = false) {
     { x: 27, z: 15 },
   ];
   const sectors =
-    kind === "foundry"
-      ? [
-          { name: "隔離主街", x: 0, z: 0 },
-          { name: "北側貨運場", x: 0, z: -49 },
-          { name: "南側撤離廣場", x: 0, z: 49 },
-          { name: "西側維修巷", x: -27, z: 0 },
-          { name: "東側巡邏巷", x: 27, z: 0 },
-        ]
-      : [
-          { name: "神社參道", x: 0, z: 0 },
-          { name: "北側勤務庭院", x: 0, z: -49 },
-          { name: "南側石庭", x: 0, z: 49 },
-          { name: "西側外廊", x: -27, z: 0 },
-          { name: "東側外廊", x: 27, z: 0 },
-        ];
+    {
+      foundry: [
+        { name: "隔離主街", x: 0, z: 0 },
+        { name: "北側貨運場", x: 0, z: -49 },
+        { name: "南側撤離廣場", x: 0, z: 49 },
+        { name: "西側維修巷", x: -27, z: 0 },
+        { name: "東側巡邏巷", x: 27, z: 0 },
+      ],
+      temple: [
+        { name: "神社參道", x: 0, z: 0 },
+        { name: "北側勤務庭院", x: 0, z: -49 },
+        { name: "南側石庭", x: 0, z: 49 },
+        { name: "西側外廊", x: -27, z: 0 },
+        { name: "東側外廊", x: 27, z: 0 },
+      ],
+      harbor: [
+        { name: "碼頭主道", x: 0, z: 0 },
+        { name: "北側吊掛區", x: 0, z: -49 },
+        { name: "南側泊位", x: 0, z: 49 },
+        { name: "西側倉儲巷", x: -27, z: 0 },
+        { name: "東側裝卸巷", x: 27, z: 0 },
+      ],
+    }[kind] ?? [];
   return {
     root,
     boxes,
@@ -1155,7 +1466,10 @@ export function createSky(scene, kind) {
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
-      uniforms: { night: { value: kind === "temple" ? 1 : 0 } },
+      uniforms: {
+        night: { value: kind === "foundry" ? 0 : 1 },
+        harbor: { value: kind === "harbor" ? 1 : 0 },
+      },
       vertexShader: `
     varying vec3 vPos;
     void main(){
@@ -1165,6 +1479,7 @@ export function createSky(scene, kind) {
       fragmentShader: `
     varying vec3 vPos;
     uniform float night;
+    uniform float harbor;
     float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
     float noise(vec2 p){
      vec2 i=floor(p),f=fract(p);
@@ -1195,7 +1510,11 @@ export function createSky(scene, kind) {
      day+=vec3(.40,.35,.25)*sun*(1.-cloudMass*.7);
      vec3 dark=mix(vec3(.16,.21,.23),vec3(.018,.038,.061),pow(height,.55));
      dark-=cloudMass*.06;
-     gl_FragColor=vec4(mix(day,dark,night),1.);
+     // Sodium and neon off the terminal bounce back from the low cloud base.
+     vec3 dock=mix(vec3(.20,.24,.30),vec3(.020,.045,.075),pow(height,.62));
+     dock+=vec3(.16,.09,.05)*pow(max(0.,1.-height*2.6),3.)*(1.-cloudMass*.45);
+     dock+=vec3(.02,.07,.10)*smoothstep(.30,.95,cloudMass)*(1.-height);
+     gl_FragColor=vec4(mix(mix(day,dark,night),dock,harbor),1.);
     }`,
     }),
   );
