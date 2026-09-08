@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#071017" />
+  <meta name="description" content="鴨警特工：霓虹封鎖線。Three.js 3D 單人戰術射擊遊戲，掩體交戰、裝備切換與限時拆除任務。" />
+  <title>鴨警特工 | DUCK POLICE</title>
+</head>
+<body>
+  <div id="scene" aria-label="3D 遊戲場景"></div>
+  <div class="grain"></div><div class="vignette"></div>
+  <main id="menu">
+    <header><a class="brand" href="./"><span class="badge">✦</span><span>DP<span class="brand-small">SPECIAL OPERATIONS</span></span></a><span class="build-tag"><i></i> 單人戰術行動 / VOL. 01</span></header>
+    <section class="intro">
+      <div class="eyebrow"><span class="line"></span> OPERATION NIGHTFALL</div>
+      <h1>鴨警<span>特工<span class="title-dot">.</span></span></h1>
+      <p class="english-title">DUCK POLICE / SPECIAL AGENT</p>
+      <p class="tagline">正義不會缺席。今晚，由你守住這座城。</p>
+      <div class="mission-card"><div class="mission-top"><span>01 / 霓虹封鎖線</span><span class="live-label">● 行動待命</span></div><p>潛入夜港街區，壓制失控的守衛。<br>找到 B 區干擾裝置，在倒數結束前完成拆除。</p><div class="mission-meta"><span>單人 × AI</span><span>3 回合</span><span>限時拆除</span></div></div>
+      <div class="menu-actions"><button id="start" class="primary">開始行動 <span>↗</span></button><button id="guide" class="secondary" aria-label="操作指南">操作指南</button></div>
+      <div class="settings"><label>任務難度 <select id="difficulty"><option value="easy">新進特工</option><option value="normal" selected>標準行動</option><option value="hard">精英特勤</option></select></label><button id="sound" aria-pressed="true">音效：開啟</button></div>
+    </section>
+    <aside class="agent-label"><div class="tiny-label">ACTIVE AGENT</div><strong>DUCK <span>007</span></strong><p>戰術行動組 / 突擊特工</p><span class="status-pill"><i></i> 裝備就緒</span></aside>
+    <footer><span>夜港市 <b>25°03′ N · 121°33′ E</b></span><span class="footer-motto">DEFEND THE CITY. KEEP YOUR FEATHERS.</span><span>THREE.JS / 3D</span></footer>
+  </main>
+  <div id="hud" hidden>
+    <div class="hud-top"><div class="operation"><span class="tiny-label">OPERATION NIGHTFALL</span><strong id="round-label">回合 01 / 03</strong></div><div class="timer"><span>剩餘時間</span><strong id="time">02:00</strong></div><div class="hud-actions"><span id="enemy-count">守衛 0</span><button id="pause" aria-label="暫停">Ⅱ</button></div></div>
+    <div class="objective"><span class="objective-icon">B</span><div><b id="objective-title">前往 B 區，拆除干擾裝置</b><small id="objective-detail">壓制守衛，善用掩體接近目標</small></div></div>
+    <canvas id="radar" width="160" height="160" aria-label="戰術雷達"></canvas>
+    <div id="crosshair"><i></i><i></i><i></i><i></i></div><div id="hitmarker">×</div><div id="damage"></div>
+    <div id="notice" aria-live="polite"></div>
+    <div id="interaction" hidden><b>按住 E 拆除裝置</b><div><i id="defuse-progress"></i></div></div>
+    <div class="hud-bottom"><div class="health-block"><span>生命值</span><strong><span id="hp">100</span><small> / 100</small></strong><div class="health-track"><i id="health-fill"></i></div></div><div class="key-hints">W A S D 移動 <em>／</em> R 換彈 <em>／</em> E 拆除 <em>／</em> 1–2 切槍</div><div class="ammo-block"><span id="weapon-name">AR-07 脈衝步槍</span><strong><span id="ammo">30</span><small id="reserve"> / 120</small></strong><div id="reload-label">AUTO · 5.56</div></div></div>
+    <div id="mobile-controls"><div id="joystick"><i></i></div><div class="touch-actions"><button id="touch-reload">換彈</button><button id="touch-switch">切槍</button><button id="touch-defuse">拆除</button><button id="touch-fire">開火</button></div><span class="swipe-hint">滑動右側瞄準</span></div>
+  </div>
+  <dialog id="help"><button class="close" id="close-help" aria-label="關閉">×</button><span class="eyebrow">FIELD MANUAL / 007</span><h2>行動指南</h2><p>在時間內抵達黃色 B 區，按住 E 五秒拆除裝置，即可完成回合。守衛可以先行消滅，也可以利用掩體繞過。</p><dl><dt>W A S D / 方向鍵</dt><dd>移動</dd><dt>滑鼠 / 左鍵</dt><dd>瞄準 / 射擊</dd><dt>滑鼠右鍵</dt><dd>精準瞄準</dd><dt>Shift / R</dt><dd>疾跑 / 換彈</dd><dt>1、2 / E</dt><dd>切換武器 / 按住拆除</dd><dt>Esc / P</dt><dd>暫停</dd></dl><p>手機：左搖桿移動、右側滑動瞄準，使用右下角的開火與拆除按鈕。裝置旁按住「拆除」完成任務。</p><p class="muted">這是單人 AI 對戰遊戲。電腦版開始後會鎖定滑鼠游標，按 Esc 即可釋放。</p></dialog>
+  <div id="overlay" hidden><div class="result-panel"><span class="eyebrow" id="result-kicker">TACTICAL PAUSE</span><h2 id="result-title">行動暫停</h2><p id="result-description">準備好後，繼續你的任務。</p><div id="result-stats"></div><button class="primary" id="continue">繼續行動 <span>↗</span></button><button class="secondary" id="back-menu">返回總部</button></div></div>
+  <div id="fatal" hidden><h2>無法啟動 3D 場景</h2><p>請使用支援 WebGL 2 的瀏覽器，並開啟硬體加速後重新整理。</p></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

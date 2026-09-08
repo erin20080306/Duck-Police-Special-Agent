@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {blocked,moveActor,timeLabel,advanceDefuse,reloadAmmo,BOXES} from '../src/rules.js';
+test('cover and arena boundaries block actors, spawn and objective remain accessible',()=>{assert.equal(blocked(0,18),false);assert.equal(blocked(7,-17),false);assert.equal(blocked(-7,10),true);assert.equal(blocked(22,0),true);});
+test('high-speed movement cannot tunnel through cover',()=>{const p={x:-7,z:18};moveActor(p,0,-15);assert.ok(p.z>=11.9);});
+test('actors slide along a wall without penetrating it',()=>{const p={x:-7,z:12};moveActor(p,2,-2);assert.ok(p.x>-5.1);assert.ok(p.z>=11.9);});
+test('reload conserves ammunition and respects remaining reserve',()=>{assert.deepEqual(reloadAmmo(7,10,30),{ammo:17,reserve:0});assert.deepEqual(reloadAmmo(25,40,30),{ammo:30,reserve:35});});
+test('defuse requires uninterrupted five-second interaction in range',()=>{assert.equal(advanceDefuse(4.9,true,true,.2),5);assert.equal(advanceDefuse(4,true,false,.2),0);assert.equal(advanceDefuse(4,false,true,.2),0);});
+test('timer handles minute rollover without displaying 60 seconds',()=>{assert.equal(timeLabel(59.2),'01:00');assert.equal(timeLabel(0),'00:00');assert.equal(timeLabel(-1),'00:00');});
+test('a traversable route connects spawn and objective',()=>{const step=1,queue=[[0,18]],seen=new Set(['0,18']);let found=false;while(queue.length){const [x,z]=queue.shift();if(Math.hypot(x-7,z+17)<2){found=true;break;}for(const [dx,dz] of [[step,0],[-step,0],[0,step],[0,-step]]){const nx=x+dx,nz=z+dz,k=`${nx},${nz}`;if(!seen.has(k)&&!blocked(nx,nz,.45,BOXES)){seen.add(k);queue.push([nx,nz]);}}}assert.ok(found);});
