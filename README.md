@@ -1,74 +1,29 @@
-# 鴨警特工 / Duck Police Special Agent
+# 鴨警特工 / Duck Force
 
-《霓虹封鎖線》是可部署到 Vercel 的 **Three.js 單人戰術 FPS**。扮演白色絨毛鴨警，在夜港市利用掩體與 AI 守衛交戰，於倒數結束前拆除 B 區干擾裝置。
+瀏覽器 3D 單人射擊遊戲。以提供的小鴨參考圖為角色方向：奶油色身體、黑帽、紅上衣、桃粉短褲、黃色鴨嘴與腳。角色目前為程式建立的風格化 3D 模型，並非 Blender 雕刻或照片等級的絨毛模型。
 
-角色以提供的第一張鴨警圖片為造型參考：白色絨毛、黃色鴨嘴、黑色警帽、金色警徽與鍊條、深色戰術服及藍色發光裝備。角色、武器與場景由程式建立 3D 幾何構成；不是從圖片提取的寫實模型。
+## 已實作
 
-## 部署到 Vercel
+- 霓虹港區與中央廣場兩張地圖，三種難度，每局三波機器人。
+- 第一／第三人稱、瞄準、兩種武器、換彈、衝刺、生命與急救補給、分數與結算。
+- 敵人接近與射擊、掩體碰撞及射線遮擋；桌面滑鼠／鍵盤與手機觸控。
+- 本地合成音效、暫停與重新開始。Three.js 版本由 package-lock.json 鎖定。
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Ferin20080306%2FDuck-Police-Special-Agent)
+## Vercel 部署
 
-若要讓此倉庫的後續更新自動部署：
+1. Vercel 新增專案，匯入此 GitHub repository。
+2. Framework Preset 選 **Vite**，Root Directory 維持根目錄。
+3. Install Command 為 `npm ci`，Build Command 為 `npm run build`；Output Directory 為 **dist**（vercel.json 已指定）。
+4. Deploy。無環境變數、無資料庫、無 API 金鑰。
 
-1. 登入 https://vercel.com/new ，選擇 **Import Git Repository**。
-2. 選擇 `erin20080306/Duck-Police-Special-Agent`。
-3. **Root Directory 保持倉庫根目錄**，Framework Preset 選 **Vite**。
-4. Build Command：`npm run build`；Output Directory：`dist`；Install Command：`npm install`。
-5. 點選 **Deploy**。
+## 操作
 
-已提供 vercel.json，不需要 API Key、資料庫或環境變數。遊戲使用靜態託管，不需要後端伺服器。部署到自己的 Vercel 帳號，需要在 Vercel 完成登入與 GitHub 授權。
+WASD 移動，滑鼠轉向，左鍵射擊，右鍵瞄準，R 換彈，Shift 衝刺，1/2 選武器，V 切換視角，Esc 暫停。手機左搖桿移動、右側空白處滑動轉向，按畫面按鍵操作。建議手機橫向遊玩。
 
-## 玩法
+本機執行 `npm ci`、`npm run dev` 啟動遊戲；執行 `npm test` 與 `npm run build` 檢查核心規則及正式建置。使用 Node.js 22.12 以上版本。
 
-- 共三回合；每回合增加守衛，開始時補滿生命與彈藥。
-- 在倒數結束前抵達黃色 B 區，持續按住拆除鍵 **5 秒**。
-- 離開拆除範圍或鬆開按鍵，拆除進度會重置。
-- 可以清空守衛再拆除，或利用掩體繞行。雷達顯示已進入警戒狀態的守衛。
-- 頭部命中造成額外傷害；守衛必須取得視線才能攻擊。
-- 生命歸零或倒數結束即失敗，可重試該回合。
-- 三種難度影響時間、守衛數量、傷害與準確度。
+## 範圍與限制
 
-| 操作 | 電腦 |
-| --- | --- |
-| 移動 | WASD 或方向鍵 |
-| 瞄準 / 開火 | 滑鼠 / 左鍵 |
-| 精準瞄準 | 按住右鍵 |
-| 疾跑 / 換彈 | 左 Shift / R |
-| 切換步槍與手槍 | 1 / 2 |
-| 拆除 | 裝置附近按住 E |
-| 暫停 / 釋放滑鼠 | Esc 或 P |
+這是原創單人遊戲，參考影片的射擊操作方向；未複製影片的美術、音樂、原始碼或品牌。未實作線上多人、帳號、跨裝置存檔或生者／不死生物陣營。線上多人需另外設計連線伺服器，不能把目前的 AI 機器人描述為真人連線。
 
-手機與平板：左搖桿移動、右側滑動瞄準；右下角有開火、換彈、切槍與拆除按鈕。建議橫向遊玩。失去焦點或切換分頁時自動暫停。
-
-## 本機開發
-
-使用 Node.js 22.12 以上版本。
-
-```sh
-npm ci
-npm run dev
-```
-
-```sh
-npm test
-npm run build
-npm run preview
-```
-
-## 專案結構
-
-- `src/main.js`：遊戲循環、第一人稱操作、武器、AI、回合、HUD、手機輸入及音效。
-- `src/character.js`：第二版鴨警角色；細密短絨、寬鴨嘴、盾形警徽、長版皮衣與持槍姿勢。
-- `src/world.js`：場景、武器及燈光；角色絨毛採 InstancedMesh 減少 draw calls。
-- `src/rules.js`：碰撞、彈藥、難度、計時及拆除規則。
-- `src/style.css`：主選單、HUD 與響應式介面。
-- `tests/rules.test.js`：規則及地圖可通行性測試。
-- `.github/workflows/ci.yml`：push / pull request 自動測試與建置。
-
-## 範圍與相容性
-
-這是原創鴨警主題的單人遊戲，參考使用者描述的瀏覽器 CS 類射擊玩法；不包含 Counter-Strike 商標、美術、地圖或音效。原 X 影片無法直接讀取，因此不宣稱逐項重現影片。
-
-需要支援 WebGL 2 的現代瀏覽器。電腦版使用 Pointer Lock；若游標未鎖定，點擊場景即可再次啟用。音效由 Web Audio 即時產生；字體使用 Google Fonts 並提供本機字體 fallback。沒有多人連線、帳號、伺服器排行榜或持久化遊戲存檔。
-
-自動驗證涵蓋規則測試與 production build；實際裝置效能及各瀏覽器觸控手感仍需在目標裝置驗收。
+美術採程式化 3D 幾何，與參考影片的高精細寫實場景有差距。網頁使用 WebGL；低階手機表現取決於裝置。未經真實瀏覽器遊玩驗證。字型可由 Google Fonts 載入，無網路時使用系統字型。Three.js 採 MIT 授權，授權檔隨 npm 套件提供。

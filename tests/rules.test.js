@@ -1,10 +1,6 @@
-import {test} from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
-import {blocked,moveActor,timeLabel,advanceDefuse,reloadAmmo,BOXES} from '../src/rules.js';
-test('cover and arena boundaries block actors, spawn and objective remain accessible',()=>{assert.equal(blocked(0,18),false);assert.equal(blocked(7,-17),false);assert.equal(blocked(-7,10),true);assert.equal(blocked(22,0),true);});
-test('high-speed movement cannot tunnel through cover',()=>{const p={x:-7,z:18};moveActor(p,0,-15);assert.ok(p.z>=11.9);});
-test('actors slide along a wall without penetrating it',()=>{const p={x:-7,z:12};moveActor(p,2,-2);assert.ok(p.x>-5.1);assert.ok(p.z>=11.9);});
-test('reload conserves ammunition and respects remaining reserve',()=>{assert.deepEqual(reloadAmmo(7,10,30),{ammo:17,reserve:0});assert.deepEqual(reloadAmmo(25,40,30),{ammo:30,reserve:35});});
-test('defuse requires uninterrupted five-second interaction in range',()=>{assert.equal(advanceDefuse(4.9,true,true,.2),5);assert.equal(advanceDefuse(4,true,false,.2),0);assert.equal(advanceDefuse(4,false,true,.2),0);});
-test('timer handles minute rollover without displaying 60 seconds',()=>{assert.equal(timeLabel(59.2),'01:00');assert.equal(timeLabel(0),'00:00');assert.equal(timeLabel(-1),'00:00');});
-test('a traversable route connects spawn and objective',()=>{const step=1,queue=[[0,18]],seen=new Set(['0,18']);let found=false;while(queue.length){const [x,z]=queue.shift();if(Math.hypot(x-7,z+17)<2){found=true;break;}for(const [dx,dz] of [[step,0],[-step,0],[0,step],[0,-step]]){const nx=x+dx,nz=z+dz,k=`${nx},${nz}`;if(!seen.has(k)&&!blocked(nx,nz,.45,BOXES)){seen.add(k);queue.push([nx,nz]);}}}assert.ok(found);});
+import {moveCircle,rayCircle,waveSize} from '../src/rules.js';
+test('cover blocks direct and vertical shots but not shots beside cover',()=>{const o={x:0,z:0,w:1,d:2};assert.equal(rayCircle(-5,0,5,0,o),true);assert.equal(rayCircle(0,-8,0,8,o),true);assert.equal(rayCircle(-5,4,5,4,o),false);assert.equal(rayCircle(4,-8,4,8,o),false);assert.equal(rayCircle(-5,0,-3,0,o),false);});
+test('movement slides along cover without entering it',()=>{const p={x:-2,z:0};moveCircle(p,1,.5,[{x:0,z:0,w:1,d:2}],.4);assert.deepEqual(p,{x:-2,z:.5});});
+test('three waves escalate on each difficulty',()=>{assert.deepEqual([1,2,3].map(w=>waveSize(w,'normal')),[3,4,5]);assert.deepEqual([1,2,3].map(w=>waveSize(w,'hard')),[5,6,7]);});
